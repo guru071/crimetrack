@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrimeTrack Pro Documentation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #3182ce;
+            --code-bg: #1f2428;
+            --font-main: 'Inter', sans-serif;
+            --sidebar-width: 280px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            line-height: 1.6;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 24px 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar-header {
+            padding: 0 24px 20px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+
+        .sidebar-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-item {
+            padding: 8px 24px;
+            display: block;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            color: #fff;
+            background-color: rgba(88, 166, 255, 0.1);
+            border-left-color: var(--accent);
+        }
+
+        .nav-group {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #484f58;
+            font-weight: 600;
+            padding: 16px 24px 8px;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 40px 60px;
+            scroll-behavior: smooth;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1, h2, h3 {
+            color: #fff;
+            font-weight: 600;
+            margin-top: 40px;
+            margin-bottom: 16px;
+        }
+
+        h1 { font-size: 32px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-top: 0; }
+        h2 { font-size: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+        h3 { font-size: 18px; }
+        
+        section { margin-bottom: 60px; }
+
+        p, ul, ol { margin-bottom: 16px; }
+        ul, ol { padding-left: 24px; }
+        li { margin-bottom: 8px; }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* Images */
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            margin: 20px 0;
+            display: block;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        .img-caption {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: -10px;
+            margin-bottom: 20px;
+        }
+
+        /* Code & Callouts */
+        code {
+            font-family: 'Consolas', 'Monaco', monospace;
+            background-color: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #ff7b72;
+        }
+
+        pre {
+            background-color: var(--code-bg);
+            padding: 16px;
+            padding-top: 36px;
+            border-radius: 6px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 16px 0;
+            position: relative;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(48, 54, 61, 0.5);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 4px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        .copy-btn:hover {
+            background: var(--border);
+            color: #fff;
+        }
+
+        pre code {
+            padding: 0;
+            background: transparent;
+            color: #e6edf3;
+        }
+
+        .callout {
+            background-color: rgba(88, 166, 255, 0.1);
+            border-left: 4px solid var(--accent);
+            padding: 16px;
+            border-radius: 4px;
+            margin: 24px 0;
+        }
+
+        .callout.warning {
+            background-color: rgba(255, 123, 114, 0.1);
+            border-left-color: #ff7b72;
+        }
+        
+        .callout-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #fff;
+        }
+        
+        .callout.warning .callout-title {
+            color: #ff7b72;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            body { flex-direction: column; overflow: auto; }
+            .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+            .main-content { padding: 24px; overflow: visible; }
+        }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                CrimeTrack Pro
+            </div>
+        </div>
+        
+        <div class="nav-group">Getting Started</div>
+        <a href="#intro" class="nav-item">Introduction</a>
+        <a href="#setup" class="nav-item">Initial Setup & Security</a>
+        
+        <div class="nav-group">Core Features</div>
+        <a href="#dashboard" class="nav-item">Dashboard Overview</a>
+        <a href="#records" class="nav-item">Adding & Editing Records</a>
+        <a href="#search" class="nav-item">AI Face Scanning</a>
+        <a href="#excel" class="nav-item">Excel Spreadsheet View</a>
+        
+        <div class="nav-group">Data & Config</div>
+        <a href="#google" class="nav-item">Google Sheets Integration</a>
+        <a href="#customdb" class="nav-item">Custom Database API</a>
+        <a href="#migration" class="nav-item">Cross-Database Migration</a>
+        <a href="#backup" class="nav-item">Backup & Restore</a>
+    </aside>
+
+    <main class="main-content">
+        <div class="container">
+            
+            <section id="intro">
+                <h1>User Manual & Documentation</h1>
+                <p>Welcome to <strong>CrimeTrack Pro</strong>, a highly-secure, offline-first tracking database designed specifically for law enforcement professionals. This documentation serves as your comprehensive, detailed guide to setting up and using the application effectively.</p>
+                <img src="https://placehold.co/800x400/161b22/58a6ff?text=CrimeTrack+Pro+Dashboard" alt="Dashboard Overview">
+                <div class="img-caption">Figure 1: The main operational dashboard.</div>
+            </section>
+
+            <section id="setup">
+                <h2>1. Initial Setup and Security</h2>
+                <p>Security is the foundation of CrimeTrack Pro. When you first launch the app, you will be prompted to set up a <strong>Master PIN</strong>.</p>
+                
+                <div class="callout warning">
+                    <div class="callout-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        CRITICAL WARNING
+                    </div>
+                    The Master PIN is critical. If you lose it, you will <strong>not</strong> be able to decrypt your local offline database. CrimeTrack uses military-grade AES encryption to ensure data remains completely secure on your physical device.
+                </div>
+
+                <h3>Authentication Steps:</h3>
+                <ol>
+                    <li><strong>Set your PIN:</strong> Enter a strong 4-6 digit numeric PIN on the lock screen.</li>
+                    <li><strong>Biometric Setup:</strong> If your device supports it, the app will scan your face via the front camera to register Face ID for faster unlocking.</li>
+                    <li><strong>Auto-Locking:</strong> The app will automatically lock if closed or left idle, requiring a quick PIN or Face scan to re-enter.</li>
+                </ol>
+            </section>
+
+            <section id="dashboard">
+                <h2>2. Dashboard Overview</h2>
+                <p>The Home Dashboard is your primary command center. It provides at-a-glance analytics and quick access to core tools.</p>
+                <img src="https://placehold.co/800x300/161b22/58a6ff?text=Analytics+%26+Alert+Center" alt="Analytics View">
+                <div class="img-caption">Figure 2: Real-time pie charts and activity alerts.</div>
+
+                <ul>
+                    <li><strong>Alert Center:</strong> A scrolling marquee at the top highlights individuals marked as "HIGH" or "EXTREME" threats based on pending cases and affiliations.</li>
+                    <li><strong>Connection Hub:</strong> Located below the alerts, this panel shows the live status of your 3 data layers: Local Storage, Google Sheets, and Custom Database.</li>
+                    <li><strong>Data Source Selector:</strong> A dropdown allowing you to easily switch between databases. Clicking "Load Data" pulls the latest records from the cloud into your view.</li>
+                </ul>
+            </section>
+
+            <section id="records">
+                <h2>3. Adding & Editing Records</h2>
+                <p>CrimeTrack features an extensive, highly detailed form for suspect entry.</p>
+                
+                <h3>How to add a suspect:</h3>
+                <ol>
+                    <li>Tap the large blue <strong>+ (Plus)</strong> button located in the center of the bottom navigation bar.</li>
+                    <li>You will be presented with a tabbed form:
+                        <ul>
+                            <li><strong>Demographics:</strong> Name, Photo upload, Address, Age, Sex, Religion.</li>
+                            <li><strong>Legal Details:</strong> FIR Number, Session Number, Pending Cases, Police Station Jurisdiction.</li>
+                            <li><strong>Criminal Profile:</strong> Current Doings, Status (Active, Arrested, Absconding, Deceased), Gang Leader, Hideouts, Area of Operation.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Save Destination:</strong> Before saving, use the dropdown at the very bottom to explicitly choose where this record gets stored (e.g., Local Storage only, or push directly to Google Sheets).</li>
+                </ol>
+
+                <img src="https://placehold.co/800x300/161b22/58a6ff?text=Extensive+Record+Entry+Form" alt="Form Entry">
+                <div class="img-caption">Figure 3: Form entry screen showing comprehensive fields.</div>
+            </section>
+
+            <section id="search">
+                <h2>4. AI Face Scanning</h2>
+                <p>The crown jewel of CrimeTrack Pro is its integrated, completely offline Artificial Intelligence facial recognition engine.</p>
+                <ol>
+                    <li>Tap the <strong>Scan Face to Search</strong> button on the Dashboard.</li>
+                    <li>You can either upload an existing photo from your gallery or use the live camera.</li>
+                    <li>The system will detect the face in the image, extract a secure biometric signature, and compare it against thousands of records in your database in milliseconds.</li>
+                    <li>Matches are returned with a percentage confidence score.</li>
+                </ol>
+                
+                <div class="callout">
+                    <div class="callout-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                        Privacy Focused Architecture
+                    </div>
+                    Face matching happens 100% locally on your device hardware. Images are never uploaded to the cloud for processing, ensuring compliance with strict privacy and security protocols.
+                </div>
+            </section>
+
+            <section id="excel">
+                <h2>5. Excel Spreadsheet View</h2>
+                <p>For officers managing bulk data, the app includes a fully functional Excel Grid view built directly into the UI.</p>
+                <img src="https://placehold.co/800x300/161b22/58a6ff?text=Spreadsheet+Grid+Interface" alt="Excel Grid">
+                <div class="img-caption">Figure 4: The full-screen, editable spreadsheet interface.</div>
+                
+                <ul>
+                    <li>Double-click any cell to instantly edit data.</li>
+                    <li><strong>Remove Duplicates:</strong> Use the built-in deduplication tool. You can select specific columns (like "Name" and "Father's Name") and instantly purge identical records.</li>
+                    <li>Changes are not applied until you click the green <strong>Save to DB</strong> button.</li>
+                </ul>
+            </section>
+
+            <section id="google">
+                <h2>6. Google Sheets Integration (Setup)</h2>
+                <p>You can use a completely free Google Sheet as your cloud database without needing any paid Google Cloud APIs. Follow these specific steps to configure it.</p>
+                
+                <h3>Step-by-step Setup:</h3>
+                <ol>
+                    <li>Go to Google Sheets on your desktop and create a blank spreadsheet. Name it "CrimeTrack Database".</li>
+                    <li>In the menu bar, click <strong>Extensions &gt; Apps Script</strong>.</li>
+                    <li>Delete any code in the editor, and paste the official CrimeTrack integration code provided below:</li>
+                </ol>
+
+<pre><code>var API_SECRET = "CHANGE_ME"; // Set your secret key here!
+
+function authenticate_(secret) {
+  if (API_SECRET && API_SECRET !== "CHANGE_ME" && secret !== API_SECRET) {
+    throw new Error("Unauthorized: Invalid API Secret Key");
+  }
+}
+
+function doGet(e) { 
+  try {
+    authenticate_(e.parameter && e.parameter.secret);
+    var action = (e.parameter && e.parameter.action) || 'read';
+    if (action === 'read_logs') return jsonResponse(handleReadLogs_());
+    return jsonResponse(handleRead_()); 
+  } catch (err) {
+    return jsonResponse({ status: 'error', message: String(err) });
+  }
+}
+
+function doPost(e) {
+  try {
+    var body = {};
+    if (e.postData && e.postData.contents) body = JSON.parse(e.postData.contents);
+    authenticate_(body.secret || (e.parameter && e.parameter.secret));
+
+    var action = (body.action || (e.parameter && e.parameter.action) || 'read').toLowerCase();
+
+    if (action === 'read') return jsonResponse(handleRead_());
+    if (action === 'read_logs') return jsonResponse(handleReadLogs_());
+    if (action === 'write' && body.records) return jsonResponse(handleWrite_(body.records));
+    if (action === 'log' && body.payload) return jsonResponse(handleLog_(body.payload));
+    
+    return jsonResponse({ status: 'error', message: 'Unknown action.' });
+  } catch (err) {
+    return jsonResponse({ status: 'error', message: String(err) });
+  }
+}
+
+function handleRead_() {
+  var sheet = getSheet_('Sheet1');
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { status: 'success', records: [], count: 0 };
+  
+  var keys = data[0];
+  var records = [];
+  for (var r = 1; r < data.length; r++) {
+    var rec = {};
+    for (var k = 0; k < keys.length; k++) {
+      rec[keys[k]] = data[r][k] != null ? String(data[r][k]) : '';
+    }
+    if (rec.id || rec.name || rec.encryptedData) records.push(rec);
+  }
+  return { status: 'success', records: records, count: records.length };
+}
+
+function handleWrite_(records) {
+  var sheet = getSheet_('Sheet1');
+  sheet.clear();
+  if (records.length === 0) return { status: 'success', message: 'Cleared records' };
+  
+  var keys = Object.keys(records[0]);
+  var rows = [keys];
+  for (var i = 0; i < records.length; i++) {
+    var row = [];
+    for (var k = 0; k < keys.length; k++) {
+      var v = records[i][keys[k]];
+      if (typeof v === 'object') v = JSON.stringify(v);
+      if (String(v).length > 49000) v = String(v).substring(0, 49000);
+      row.push(v != null ? v : '');
+    }
+    rows.push(row);
+  }
+  sheet.getRange(1, 1, rows.length, keys.length).setValues(rows);
+  return { status: 'success', message: 'Saved ' + records.length + ' records', count: records.length };
+}
+
+function handleLog_(payload) {
+  var sheet = getSheet_('Logs', true);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['Timestamp', 'Officer ID', 'Event', 'Details']);
+    sheet.setFrozenRows(1);
+  }
+  sheet.appendRow([payload.timestamp, payload.officerId, payload.event, payload.details]);
+  return { status: 'success', message: 'Log appended' };
+}
+
+function handleReadLogs_() {
+  var sheet = getSheet_('Logs', false);
+  if (!sheet) return { status: 'success', logs: [] };
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { status: 'success', logs: [] };
+  
+  var logs = [];
+  var start = Math.max(1, data.length - 20);
+  for (var r = start; r < data.length; r++) {
+    logs.push({
+      timestamp: data[r][0],
+      officerId: data[r][1],
+      event: data[r][2],
+      details: data[r][3]
+    });
+  }
+  return { status: 'success', logs: logs };
+}
+
+function getSheet_(name, createIfMissing) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet && createIfMissing) sheet = ss.insertSheet(name);
+  if (!sheet) sheet = ss.getActiveSheet();
+  return sheet;
+}
+
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+</code></pre>
+
+                <ol start="4">
+                    <li>Click the <strong>Save</strong> icon (floppy disk).</li>
+                    <li><strong>CRITICAL STEP:</strong> At the very top of the editor, ensure <code>doGet</code> is selected in the dropdown next to "Debug", then click the <strong>Run</strong> button.</li>
+                    <li>A popup will appear saying "Authorization required". Click <strong>Review permissions</strong>.</li>
+                    <li>Select your Google account. It will say "Google hasn’t verified this app". Click <strong>Advanced</strong> at the bottom, then click <strong>Go to Untitled project (unsafe)</strong>. Click <strong>Allow</strong>. (If you skip this step, you will get a CORS error!).</li>
+                    <li>Now click the blue <strong>Deploy</strong> button in the top right corner, then select <strong>New deployment</strong>.</li>
+                    <li>Under "Select type", choose the gear icon and select <strong>Web app</strong>.</li>
+                    <li>Under "Execute as", select <strong>Me</strong>.</li>
+                    <li>Under "Who has access", you <strong>must</strong> change it to <strong>Anyone</strong>.</li>
+                    <li>Click <strong>Deploy</strong>. Copy the "Web app URL" provided.</li>
+                    <li>In CrimeTrack Pro, go to <strong>Settings</strong>, scroll down to Google Sheets, and paste this URL into the <strong>Apps Script Web App URL</strong> field.</li>
+                </ol>
+                <img src="https://placehold.co/800x250/161b22/58a6ff?text=Paste+Web+App+URL+in+Settings" alt="Apps Script Settings">
+                <div class="img-caption">Figure 5: Pasting the URL into the CrimeTrack Settings view.</div>
+
+                <div class="callout warning">
+                    <div class="callout-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        Troubleshooting: CORS Errors
+                    </div>
+                    If you get a <strong>"blocked by CORS policy"</strong> error when trying to sync or migrate, it means Google is trying to ask you for permission in the background, but it can't. To fix this:
+                    <ol style="margin-top: 10px; margin-bottom: 0;">
+                        <li>Go back to your Apps Script Editor.</li>
+                        <li>Click <strong>Run</strong> at the top to trigger the "Authorization Required" popup, and accept it (Advanced -> Go to unsafe -> Allow).</li>
+                        <li>You <strong>MUST</strong> create a New Deployment. Do not just click Save. Click <strong>Deploy > New Deployment</strong>.</li>
+                        <li>Ensure it is set to Execute as: <strong>Me</strong> and Who has access: <strong>Anyone</strong>.</li>
+                        <li><strong>CRITICAL:</strong> Google generates a completely NEW URL for every "New Deployment". You must copy this new URL, go back to the CrimeTrack Settings, <strong>delete the old URL</strong>, and paste the new one. If you don't update the URL in Settings, the CORS error will persist!</li>
+                    </ol>
+                </div>
+            </section>
+
+            <section id="customdb">
+                <h2>7. Custom Database Setup (MySQL/MongoDB)</h2>
+                <p>Because CrimeTrack Pro is a secure frontend application, it cannot connect directly to MySQL or MongoDB for security reasons. Instead, you need to run a small Node.js server.</p>
+                <p>We provide two scripts inside the app's <code>public</code> folder: <code>backend-mysql.js</code> and <code>backend-mongo.js</code>. These scripts automatically create your databases and tables/collections when you run them!</p>
+                
+                <h3>MySQL Setup Steps</h3>
+                <ol>
+                    <li>Install Node.js on your server.</li>
+                    <li>Copy the code below into a file named <code>server.js</code> (or use <code>backend-mysql.js</code> from the public folder).</li>
+                    <li>Install the required packages: <code>npm install express cors mysql2</code></li>
+                    <li>Run the server: <code>node server.js</code></li>
+                    <li>In CrimeTrack Pro, go to Settings &gt; Custom Database API, select MySQL, and paste your server URL (e.g. <code>http://localhost:3000/api/records</code>).</li>
+                </ol>
+
+<pre><code>// MySQL Server Setup (server.js)
+const express = require('express');
+const mysql = require('mysql2/promise');
+const cors = require('cors');
+const app = express();
+app.use(cors()); app.use(express.json({ limit: '50mb' }));
+
+const dbConfig = { host: 'localhost', user: 'root', password: '', database: 'crimetrack_db' };
+let pool;
+
+async function initDatabase() {
+  const conn = await mysql.createConnection({ host: dbConfig.host, user: dbConfig.user, password: dbConfig.password });
+  await conn.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
+  await conn.end();
+  pool = mysql.createPool(dbConfig);
+  await pool.query(`CREATE TABLE IF NOT EXISTS records ( id VARCHAR(50) PRIMARY KEY, name VARCHAR(255), photo LONGTEXT, data JSON )`);
+}
+initDatabase();
+
+app.get('/api/records', async (req, res) => {
+  const [rows] = await pool.query('SELECT * FROM records');
+  res.json(rows);
+});
+app.post('/api/records', async (req, res) => {
+  // Handle inserts here
+  res.json({ success: true });
+});
+app.listen(3000, () => console.log('MySQL API running on port 3000'));
+</code></pre>
+
+                <h3>MongoDB Setup Steps</h3>
+                <ol>
+                    <li>Install Node.js and MongoDB on your server.</li>
+                    <li>Copy the code below into a file named <code>server.js</code> (or use <code>backend-mongo.js</code> from the public folder).</li>
+                    <li>Install the required packages: <code>npm install express cors mongodb</code></li>
+                    <li>Run the server: <code>node server.js</code></li>
+                </ol>
+<pre><code>// MongoDB Server Setup (server.js)
+const express = require('express');
+const { MongoClient } = require('mongodb');
+const cors = require('cors');
+const app = express();
+app.use(cors()); app.use(express.json({ limit: '50mb' }));
+
+let db;
+async function initDatabase() {
+  const client = new MongoClient('mongodb://localhost:27017');
+  await client.connect();
+  db = client.db('crimetrack_db');
+}
+initDatabase();
+
+app.get('/api/records', async (req, res) => {
+  const records = await db.collection('records').find({}).toArray();
+  res.json(records.map(r => { delete r._id; return r; }));
+});
+app.post('/api/records', async (req, res) => {
+  const records = req.body;
+  await db.collection('records').deleteMany({});
+  if (records.length > 0) await db.collection('records').insertMany(records);
+  res.json({ success: true });
+});
+app.listen(3000, () => console.log('MongoDB API running on port 3000'));
+</code></pre>
+            </section>
+
+            <section id="migration">
+                <h2>8. Cross-Database Migration</h2>
+                <p>Just added to CrimeTrack Pro: the ability to seamlessly migrate bulk data between backends.</p>
+                <p>If you have been working entirely on Local Storage and just set up your Google Sheet, you can instantly move all your data.</p>
+                <ol>
+                    <li>Go to the <strong>Settings</strong> tab.</li>
+                    <li>Locate the <strong>Cross-Database Migration</strong> panel.</li>
+                    <li>Set <strong>Migrate From</strong> to "Local Storage".</li>
+                    <li>Set <strong>Migrate To</strong> to "Google Sheets".</li>
+                    <li>Click <strong>Start Migration</strong>. The system will safely push all your local records into the cloud sheet.</li>
+                </ol>
+            </section>
+
+            <section id="backup">
+                <h2>9. Backup and Restore</h2>
+                <p>Data loss is unacceptable. CrimeTrack Pro features robust physical backup tools.</p>
+                <ul>
+                    <li><strong>Backup ZIP:</strong> Available on the Home Dashboard under "Offline Tools". This generates a highly compressed <code>.zip</code> file containing your JSON database and all Base64 images as physical <code>.jpg</code> files. Save this to a secure thumb drive.</li>
+                    <li><strong>Restore ZIP:</strong> Simply select your generated ZIP file to instantly rehydrate the app with your records and photos.</li>
+                    <li><strong>Export Excel:</strong> Downloads a clean <code>.xlsx</code> file containing all text metadata suitable for court reports and physical printing.</li>
+                </ul>
+            </section>
+
+        </div>
+    </main>
+
+    <script>
+        const sections = document.querySelectorAll("section");
+        const navItems = document.querySelectorAll(".nav-item");
+        const mainContent = document.querySelector('.main-content');
+        
+        mainContent.addEventListener("scroll", () => {
+            let current = "";
+            sections.forEach((section) => {
+                const sectionTop = section.offsetTop;
+                if (mainContent.scrollTop >= sectionTop - 60) {
+                    current = section.getAttribute("id");
+                }
+            });
+
+            navItems.forEach((li) => {
+                li.classList.remove("active");
+                if (li.getAttribute("href").includes(current)) {
+                    li.classList.add("active");
+                }
+            });
+        });
+
+        // Add Copy Buttons to Code Blocks
+        document.querySelectorAll('pre').forEach(pre => {
+            const btn = document.createElement('button');
+            btn.className = 'copy-btn';
+            btn.innerText = 'Copy';
+            btn.onclick = () => {
+                const code = pre.querySelector('code').innerText;
+                navigator.clipboard.writeText(code).then(() => {
+                    btn.innerText = 'Copied!';
+                    btn.style.color = '#10b981';
+                    setTimeout(() => { 
+                        btn.innerText = 'Copy'; 
+                        btn.style.color = 'var(--text-muted)'; 
+                    }, 2000);
+                });
+            };
+            pre.appendChild(btn);
+        });
+    </script>
+</body>
+</html>

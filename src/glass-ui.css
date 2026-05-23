@@ -1,0 +1,172 @@
+/* Modern glass UI — works with --ct-* vars from TimeBasedTheme */
+
+.ct-app {
+  position: relative;
+  min-height: 100vh;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ct-ambient {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ct-ambient::before,
+.ct-ambient::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: var(--ct-orb-opacity, 0.45);
+  transition: opacity 1s ease;
+}
+
+.ct-ambient::before {
+  width: min(70vw, 420px);
+  height: min(70vw, 420px);
+  top: -8%;
+  right: -12%;
+  background: var(--ct-orb-a, rgba(255, 255, 255, 0.15));
+}
+
+.ct-ambient::after {
+  width: min(60vw, 360px);
+  height: min(60vw, 360px);
+  bottom: 12%;
+  left: -15%;
+  background: var(--ct-orb-b, rgba(255, 255, 255, 0.1));
+}
+
+.ct-scrim {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--ct-scrim, rgba(0, 0, 0, 0.38));
+  transition: background 0.8s ease;
+}
+
+.ct-content {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
+
+/* Glass surfaces */
+.ct-glass {
+  background: var(--ct-glass-bg);
+  backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.35);
+  -webkit-backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.35);
+  border: 1px solid var(--ct-glass-border);
+  box-shadow: var(--ct-glass-shadow);
+}
+
+.ct-glass-header {
+  background: var(--ct-header-bg);
+  backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.4);
+  border-bottom: 1px solid var(--ct-glass-border);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+.ct-glass-nav {
+  background: var(--ct-nav-bg);
+  backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.4);
+  border-top: 1px solid var(--ct-glass-border);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.ct-period-pill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--ct-accent-fg);
+  background: var(--ct-accent);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--ct-accent) 50%, transparent);
+}
+
+/* Readable text on glass */
+.ct-app h1,
+.ct-app h2,
+.ct-app h3,
+.ct-app .ct-title {
+  color: var(--ct-text);
+  text-shadow: var(--ct-text-shadow, 0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
+.ct-app .ct-muted {
+  color: var(--ct-muted) !important;
+}
+
+.ct-app input,
+.ct-app textarea,
+.ct-app select {
+  color: var(--ct-text);
+  background: var(--ct-input-bg);
+  border: 1px solid var(--ct-glass-border);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.ct-app input::placeholder,
+.ct-app textarea::placeholder {
+  color: var(--ct-muted);
+  opacity: 0.85;
+}
+
+.ct-app input:focus,
+.ct-app textarea:focus,
+.ct-app select:focus {
+  outline: none;
+  border-color: var(--ct-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ct-accent) 35%, transparent);
+}
+
+.ct-app button.ct-glass-btn {
+  background: var(--ct-glass-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--ct-glass-border);
+  color: var(--ct-text);
+}
+
+.ct-app button.ct-glass-btn:hover {
+  border-color: var(--ct-accent);
+  background: color-mix(in srgb, var(--ct-glass-bg) 80%, var(--ct-accent) 20%);
+}
+
+/* Recharts — axis only; pie legends use ChartLegendList in React */
+.ct-app .recharts-cartesian-axis-tick-value {
+  fill: #f1f5f9 !important;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ct-app .recharts-cartesian-grid line {
+  stroke: rgba(255, 255, 255, 0.15);
+}
+
+@keyframes ct-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ct-app .spin {
+  animation: ct-spin 0.8s linear infinite;
+}
+
+.ct-app .recharts-pie-label-text {
+  fill: #ffffff !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 3px;
+}
