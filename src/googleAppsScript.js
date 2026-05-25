@@ -45,7 +45,7 @@ export async function fetchFromAppsScript(webAppUrl, secret) {
   return (json.records || []).map((r) => {
     let fd = r.faceDescriptor;
     if (typeof fd === "string" && fd) {
-      try { fd = JSON.parse(fd); } catch(e) {}
+      try { fd = JSON.parse(fd); } catch { /* keep original descriptor */ }
     }
     return {
       ...r,

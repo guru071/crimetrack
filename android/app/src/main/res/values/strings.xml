@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">crimetrack</string>
-    <string name="title_activity_main">crimetrack</string>
-    <string name="package_name">com.police.crimetrack</string>
-    <string name="custom_url_scheme">com.police.crimetrack</string>
+    <string name="app_name">C.A.S.E</string>
+    <string name="title_activity_main">C.A.S.E</string>
+    <string name="package_name">tech.goatech.crimetrack</string>
+    <string name="custom_url_scheme">tech.goatech.crimetrack</string>
 </resources>

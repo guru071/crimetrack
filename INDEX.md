@@ -329,3 +329,30 @@ See `backend/SETUP.md` for more solutions.
 **All requirements fulfilled! Ready to build.** 🚀
 
 Start with → [`SHEETS_QUICKSTART.md`](./SHEETS_QUICKSTART.md)
+
+---
+
+## 🆕 AUTHENTICATION SETUP (Latest - May 2025)
+
+### For EmailJS + Google Sign-In Setup
+
+| Document | Time | Purpose |
+|----------|------|---------|
+| **[NEXT_STEPS.txt](./NEXT_STEPS.txt)** | 5 min | ⭐ START HERE! Simple 5-step guide |
+| **[SESSION_COMPLETE.txt](./SESSION_COMPLETE.txt)** | 5 min | What was fixed |
+| **[STATUS.txt](./STATUS.txt)** | 3 min | Current status |
+| **[README_FIXES.md](./README_FIXES.md)** | 5 min | All fixes explained |
+| **[COMPLETE_FIX_SUMMARY.md](./COMPLETE_FIX_SUMMARY.md)** | 10 min | Full technical summary |
+| **[COMPLETE_SETUP_GUIDE.md](./COMPLETE_SETUP_GUIDE.md)** | 20 min | Detailed step-by-step |
+| **[COMPLETE_STATUS_REPORT.md](./COMPLETE_STATUS_REPORT.md)** | 15 min | Architecture & decisions |
+| **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** | 10 min | Common issues & solutions |
+| **[FIXES_APPLIED.md](./FIXES_APPLIED.md)** | 3 min | Changes summary |
+
+### Quick Setup (5 minutes)
+1. Read: **NEXT_STEPS.txt**
+2. Run: `npm install`
+3. Add Google Web Client ID to `src/nativeGoogleSignIn.js`
+4. Run: `npm run get-sha1`
+5. Add SHA-1 to Firebase Console
+
+**Status:** ✅ All bugs fixed, ready for npm install

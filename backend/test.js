@@ -30,6 +30,10 @@ function divider(title = '') {
   }
 }
 
+function isPlaceholder(value) {
+  return !value || /your_|placeholder|here/i.test(value);
+}
+
 async function runTests() {
   divider('Google Sheets Backend - Test Suite');
 
@@ -44,21 +48,18 @@ async function runTests() {
 
   let envValid = true;
   Object.entries(env).forEach(([key, value]) => {
-    if (!value) {
-      log(`   ✗ ${key} - NOT SET`, 'red');
+    if (isPlaceholder(value)) {
+      log(`   ✗ ${key} - NOT CONFIGURED`, 'red');
       envValid = false;
     } else {
-      const display =
-        key === 'GOOGLE_CLIENT_SECRET'
-          ? value.substring(0, 10) + '***'
-          : value;
       log(`   ✓ ${key}`, 'green');
     }
   });
 
   if (!envValid) {
-    log('\n   ✗ Missing required environment variables', 'red');
-    log('   → Copy .env.example to .env and fill in your credentials', 'yellow');
+    log('\n   ✗ Missing required Google OAuth environment variables', 'red');
+    log('   → Fill GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, and GOOGLE_SHEETS_ID if you want to use the OAuth backend.', 'yellow');
+    log('   → The frontend can still use the Apps Script Web App path without these OAuth credentials.', 'yellow');
     return false;
   }
 

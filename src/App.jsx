@@ -1,39 +1,28 @@
-import { useState, useEffect, useRef } from "react";
+import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import {
-  Home, ClipboardList, PlusCircle, BarChart3, Search, X, Settings,
-  AlertTriangle, Shield, User, Save, Share2, FileText, Trash2,
-  ChevronRight, DownloadCloud, UploadCloud, FolderOpen, Activity, Lock, Users, Info, ScanFace, Camera, Mic, GitCompare, Cloud, Bell, Wifi, WifiOff, Database
+  Home, ClipboardList, PlusCircle, Search, X, Settings,
+  AlertTriangle, Shield, User, Save, FileText, Trash2,
+  ChevronRight, DownloadCloud, UploadCloud, FolderOpen, Activity, Lock, Users, ScanFace, Camera, Mic, GitCompare, Cloud, Bell, Database
 } from "lucide-react";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import { App as CapApp } from "@capacitor/app";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import { Capacitor } from "@capacitor/core";
-import { NativeBiometric } from "@capgo/capacitor-native-biometric";
-import JSZip from "jszip";
 import ReactCrop from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
-import { Human } from '@vladmandic/human';
 import CryptoJS from "crypto-js";
-import ExcelJS from 'exceljs';
-import nlp from 'compromise';
-import GoogleSheetsSync from './GoogleSheetsSync';
-import GoogleSheetsView from './GoogleSheetsView';
 import { getTimeBasedTheme, themeToCssVars } from './TimeBasedTheme';
-import { parseGoogleSheetInput, sheetIdFromSettings, sheetLinkFromSettings } from './googleSheetUtils';
+import { parseGoogleSheetInput, sheetLinkFromSettings } from './googleSheetUtils';
 import {
   EXCEL_COLUMNS, recordToExcelRow, embedPhotoInSheet, buildExcelImageMap,
 } from './excelUtils';
 import {
-  SOURCE_UI, loadRecordsForSource, saveRecordsForSource, isGoogleSheetsConfigured, sendAuditLog
+  SOURCE_UI, loadRecordsForSource, loadLogsForSource, saveRecordsForSource, isGoogleSheetsConfigured, sendAuditLog
 } from './dataSources';
 import { isAppsScriptConfigured } from './googleAppsScript';
 import DataSourcePanel from './DataSourcePanel';
-import ExcelSpreadsheet from './ExcelSpreadsheet';
 import {
-  CHART_COLORS,
   CHART_TOOLTIP_PROPS,
   ChartLegendList,
   AXIS_TICK,
@@ -41,8 +30,19 @@ import {
   sliceColor,
   SEX_SLICE_COLORS,
 } from './chartTheme';
-import { auditLog, calculateRiskScore, getHotspots, compressImage } from './AdvancedUtils';
-import { AdvancedAnalyticsDashboard } from './AdvancedAnalytics';
+import LoginView from './LoginView';
+import { auth, db, doc, getDoc, addDoc, collection, serverTimestamp, query, where, orderBy, limit, onSnapshot } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { initializeNativeGoogleSignIn } from './nativeGoogleSignIn';
+
+const ExcelSpreadsheet = lazy(() => import('./ExcelSpreadsheet'));
+const GoogleSheetsSync = lazy(() => import('./GoogleSheetsSync'));
+const GoogleSheetsView = lazy(() => import('./GoogleSheetsView'));
+const OperationsRoom = lazy(() => import('./OperationsRoom'));
+const ProfileView = lazy(() => import('./ProfileView'));
+const AdvancedAnalyticsDashboard = lazy(() =>
+  import('./AdvancedAnalytics').then((mod) => ({ default: mod.AdvancedAnalyticsDashboard }))
+);
 
 function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -94,7 +94,19 @@ const humanConfig = {
   hand: { enabled: false },
   object: { enabled: false }
 };
-const human = new Human(humanConfig);
+
+let humanPromise;
+async function getHumanModel() {
+  if (!humanPromise) {
+    humanPromise = import('@vladmandic/human').then(async ({ Human }) => {
+      const human = new Human(humanConfig);
+      await human.load();
+      await human.warmup();
+      return human;
+    });
+  }
+  return humanPromise;
+}
 
 /* ─── Constants ─────────────────────────────────────────────── */
 const FIELDS = [
@@ -130,6 +142,87 @@ const STATUS_CFG = {
   Deceased: { bg: "#1f2937", color: "#9ca3af", dot: "#6b7280" },
 };
 
+const DEMO_PROFILE = {
+  uid: "demo-officer",
+  policeId: "CT-DEMO-000001",
+  name: "Demo Officer",
+  email: "demo.officer@crimetrack.local",
+  station: "Demo Central Police Station",
+  provider: "demo",
+};
+
+const DEMO_USER = {
+  uid: DEMO_PROFILE.uid,
+  email: DEMO_PROFILE.email,
+  emailVerified: true,
+  providerData: [{ providerId: "demo" }],
+};
+
+const DEMO_RECORDS = [
+  {
+    id: "demo-rec-001",
+    name: "Arjun Kumar",
+    fatherName: "S. Kumar",
+    address: "North Market Road, Demo City",
+    age: 32,
+    sex: "Male",
+    policeStation: "Demo Central",
+    hsNo: "HS-114",
+    firNumber: "45/2026",
+    firDate: "2026-05-14",
+    casesPending: "Robbery, extortion",
+    currentDoings: "Under surveillance",
+    hideouts: "Old bus stand area",
+    areaOfOperation: "North Zone",
+    gangLeader: "R. Mani",
+    associates: "Two unknown associates",
+    status: "Active",
+    caseYear: 2026,
+    notes: "Fictional demo record for app preview only.",
+    createdAt: "2026-05-24T09:30:00.000Z",
+  },
+  {
+    id: "demo-rec-002",
+    name: "Meera Das",
+    fatherName: "P. Das",
+    address: "River Colony, Demo City",
+    age: 28,
+    sex: "Female",
+    policeStation: "Demo East",
+    hsNo: "HS-088",
+    firNumber: "39/2026",
+    firDate: "2026-05-09",
+    casesPending: "Cyber fraud",
+    currentDoings: "Location verification pending",
+    areaOfOperation: "East Zone",
+    status: "Absconding",
+    caseYear: 2026,
+    notes: "Fictional demo record for app preview only.",
+    createdAt: "2026-05-23T15:45:00.000Z",
+  },
+  {
+    id: "demo-rec-003",
+    name: "Ravi Nair",
+    fatherName: "K. Nair",
+    address: "Harbor Line, Demo City",
+    age: 41,
+    sex: "Male",
+    policeStation: "Demo Harbor",
+    hsNo: "HS-029",
+    firNumber: "22/2025",
+    firDate: "2025-11-17",
+    casesPending: "Vehicle theft",
+    currentDoings: "Judicial custody",
+    areaOfOperation: "Harbor Zone",
+    status: "Arrested",
+    caseYear: 2025,
+    notes: "Fictional demo record for app preview only.",
+    createdAt: "2026-05-20T12:00:00.000Z",
+  },
+];
+
+const DEMO_RESTRICTED_MESSAGE = "Demo mode is read-only. Login with a registered police account to use live data and secured tools.";
+
 
 /* ─── Styles (CSS variables set on app root from sunrise/sunset theme) ── */
 const T = {
@@ -144,6 +237,7 @@ const T = {
   green: "var(--ct-green)",
   purple: "var(--ct-purple)",
   blue: "var(--ct-blue)",
+  accent2: "var(--ct-blue)",
   text: "var(--ct-text)",
   muted: "var(--ct-muted)",
   border: "var(--ct-border)",
@@ -152,21 +246,18 @@ const T = {
 
 const glassSurface = {
   background: "var(--ct-glass-bg)",
-  backdropFilter: "blur(var(--ct-glass-blur)) saturate(1.35)",
-  WebkitBackdropFilter: "blur(var(--ct-glass-blur)) saturate(1.35)",
   border: "1px solid var(--ct-glass-border)",
-  boxShadow: "var(--ct-glass-shadow)",
   color: "var(--ct-text)",
 };
 
 const css = {
-  page: { minHeight: "100vh", color: "var(--ct-text)", paddingBottom: 80 },
+  page: { minHeight: "100vh", color: "var(--ct-text)", paddingBottom: 80, width: "100%", maxWidth: 800, margin: "0 auto" },
   header: { position: "fixed", top: 0, left: 0, right: 0, height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 100, transition: "all 0.5s ease" },
   bottomNav: { position: "fixed", bottom: 0, left: 0, right: 0, height: 68, display: "flex", alignItems: "center", zIndex: 100, transition: "all 0.5s ease" },
   card: { ...glassSurface, borderRadius: 20, padding: "18px", marginBottom: 14 },
   statCard: { ...glassSurface, borderRadius: 20, padding: "20px 18px", flex: 1 },
-  btn: { ...glassSurface, background: "var(--ct-glass-bg)", borderRadius: 12, padding: "10px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8, justifyContent: "center", transition: "all 0.2s ease" },
-  btnAccent: { background: "var(--ct-accent)", border: "1px solid color-mix(in srgb, var(--ct-accent) 80%, white)", borderRadius: 12, color: "var(--ct-accent-fg)", padding: "12px 20px", cursor: "pointer", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, justifyContent: "center", transition: "all 0.2s ease", boxShadow: "0 4px 24px color-mix(in srgb, var(--ct-accent) 45%, transparent), inset 0 1px 0 rgba(255,255,255,0.25)" },
+  btn: { ...glassSurface, background: "var(--ct-glass-bg)", borderRadius: 12, padding: "10px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8, justifyContent: "center", transition: "all 0.2s ease", border: "none" },
+  btnAccent: { background: "var(--ct-accent)", borderRadius: 12, color: "var(--ct-accent-fg)", padding: "12px 20px", cursor: "pointer", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, justifyContent: "center", transition: "all 0.2s ease", border: "none" },
   input: { background: "var(--ct-input-bg)", border: "1px solid var(--ct-glass-border)", borderRadius: 12, color: "var(--ct-text)", padding: "12px 14px", fontSize: 14, width: "100%", boxSizing: "border-box", outline: "none", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" },
   label: { fontSize: 11, color: "var(--ct-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6, fontWeight: 600 },
   sectionTitle: { fontSize: 12, color: "var(--ct-accent)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12, fontWeight: 700, textShadow: "var(--ct-text-shadow)" },
@@ -209,6 +300,14 @@ function Toast({ msg, type }) {
   );
 }
 
+function ModuleLoader({ label = "Loading module..." }) {
+  return (
+    <div style={{ padding: "92px 14px 80px", color: T.muted, textAlign: "center", fontSize: 13 }}>
+      {label}
+    </div>
+  );
+}
+
 /* Inject mic pulse animation */
 if (typeof document !== "undefined" && !document.getElementById("mic-pulse-style")) {
   const s = document.createElement("style");
@@ -227,7 +326,7 @@ if (typeof document !== "undefined" && !document.getElementById("mic-pulse-style
 function ConfirmDialog({ msg, onConfirm, onCancel }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 20 }}>
-      <div style={{ ...css.card, maxWidth: 320, width: "100%", textAlign: "center" }}>
+      <div style={{ ...css.card, maxWidth: 360, width: "100%", textAlign: "center" }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><AlertTriangle size={32} color={T.accent} /></div>
         <div style={{ marginBottom: 18, fontSize: 14, color: T.muted }}>{msg}</div>
         <div style={{ display: "flex", gap: 10 }}>
@@ -250,7 +349,7 @@ function Header({ view, goBack, navStack, title, timeTheme, isOnline, navigate }
           </button>
           : <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Shield size={22} color={timeTheme?.accentColor} />
-            <span className="ct-title" style={{ fontWeight: 800, color: "var(--ct-text)", fontSize: 15, letterSpacing: "-0.02em" }}>CrimeTrack</span>
+            <span className="ct-title" style={{ fontWeight: 800, color: "var(--ct-text)", fontSize: 15, letterSpacing: "-0.02em" }}>C.A.S.E</span>
           </div>
         }
       </div>
@@ -263,24 +362,20 @@ function Header({ view, goBack, navStack, title, timeTheme, isOnline, navigate }
         </div>
         <button onClick={() => navigate && navigate("notifications")} style={{ background: "transparent", border: "none", cursor: "pointer", display: "flex", color: T.text, position: "relative" }}>
           <Bell size={18} />
-          <span style={{ position: "absolute", top: -2, right: -2, width: 8, height: 8, background: T.red, borderRadius: "50%" }} />
         </button>
       </div>
     </div>
   );
 }
 
-function BottomNav({ view, navTo, navigate, onImportExcel, isGoogleSheetsAuthenticated }) {
-  const [showAddSheet, setShowAddSheet] = useState(false);
-  const importRef = useRef();
-
+function BottomNav({ view, navTo, navigate, isGoogleSheetsAuthenticated, isDemoMode, onRestrictedAction }) {
   const tabs = [
     { id: "dashboard", icon: <Home size={20} />, label: "Home" },
     { id: "list", icon: <ClipboardList size={20} />, label: "Records" },
     { id: "__add__", icon: <PlusCircle size={28} />, label: "Add", isAdd: true },
-    { id: "about", icon: <Info size={20} />, label: "Info" },
+    { id: "operations", icon: <Activity size={20} />, label: "Operations" },
     ...(isGoogleSheetsAuthenticated ? [{ id: "sheets", icon: <Cloud size={20} />, label: "Sheets" }] : []),
-    { id: "settings", icon: <Settings size={20} />, label: "Settings" },
+    { id: "profile", icon: <User size={20} />, label: "Profile" },
   ];
 
   return (
@@ -292,7 +387,9 @@ function BottomNav({ view, navTo, navigate, onImportExcel, isGoogleSheetsAuthent
           const tabColor = t.isAdd || active ? "var(--ct-accent)" : "var(--ct-muted)";
           return (
             <button key={t.id} type="button"
-              onClick={t.isAdd ? () => navigate("form", { record: null }) : () => navTo(t.id)}
+              onClick={t.isAdd
+                ? () => (isDemoMode ? onRestrictedAction?.("Adding records") : navigate("form", { record: null }))
+                : () => navTo(t.id)}
               style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "10px 4px" }}>
               <span style={{
                 color: tabColor,
@@ -323,7 +420,23 @@ function BottomNav({ view, navTo, navigate, onImportExcel, isGoogleSheetsAuthent
 
 
 /* ─── Dashboard ──────────────────────────────────────────────── */
-function Dashboard({ records, navigate, getAnalytics, onExport, onImport, onExportExcel, onImportExcel, activeDataSource, settings, onLoadSource, sourceLoading, onSelectSource }) {
+function Dashboard({
+  records,
+  navigate,
+  getAnalytics,
+  onExport,
+  onImportClick,
+  onImport,
+  onExportExcel,
+  onImportExcelClick,
+  onImportExcel,
+  activeDataSource,
+  settings,
+  onLoadSource,
+  sourceLoading,
+  onSelectSource,
+  isDemoMode,
+}) {
   const analytics = getAnalytics();
   const total = records.length;
   const active = records.filter(r => r.status === "Active").length;
@@ -336,11 +449,22 @@ function Dashboard({ records, navigate, getAnalytics, onExport, onImport, onExpo
       {/* Hero */}
       <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <div className="ct-muted" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600 }}>Local Database</div>
+          <div className="ct-muted" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600 }}>{isDemoMode ? "Read-only Demo" : "Local Database"}</div>
           <div className="ct-title" style={{ fontSize: 26, fontWeight: 800, color: "var(--ct-text)", marginTop: 4, letterSpacing: "-0.03em" }}>Accused Records</div>
           <div className="ct-muted" style={{ fontSize: 13, marginTop: 4 }}>{new Date().toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}</div>
         </div>
       </div>
+      {isDemoMode && (
+        <div style={{ ...css.card, borderColor: "color-mix(in srgb, var(--ct-blue) 45%, transparent)", background: "color-mix(in srgb, var(--ct-blue) 10%, transparent)", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Shield size={18} color={T.blue} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: T.blue }}>Demo preview active</div>
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{DEMO_RESTRICTED_MESSAGE}</div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Automated Alert Center */}
       {(() => {
         const alerts = records
@@ -412,7 +536,7 @@ function Dashboard({ records, navigate, getAnalytics, onExport, onImport, onExpo
       {/* Offline Tools */}
       <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <button style={{ ...css.btn, flex: 1, fontSize: 11 }} onClick={onExport}><DownloadCloud size={14} /> Backup ZIP</button>
-        <button style={{ ...css.btn, flex: 1, fontSize: 11 }} onClick={() => document.getElementById('import-file').click()}><UploadCloud size={14} /> Restore ZIP</button>
+        <button style={{ ...css.btn, flex: 1, fontSize: 11 }} onClick={onImportClick}><UploadCloud size={14} /> Restore ZIP</button>
         <input id="import-file" type="file" accept=".json,.zip" style={{ display: "none" }} onChange={onImport} />
       </div>
 
@@ -425,7 +549,7 @@ function Dashboard({ records, navigate, getAnalytics, onExport, onImport, onExpo
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <button style={{ ...css.btn, flex: 1, fontSize: 11, borderColor: "#10b981", color: "#10b981" }} onClick={onExportExcel}><DownloadCloud size={14} /> Export Excel</button>
-        <button style={{ ...css.btn, flex: 1, fontSize: 11, borderColor: "#10b981", color: "#10b981" }} onClick={() => document.getElementById('import-excel').click()}><UploadCloud size={14} /> Import Excel</button>
+        <button style={{ ...css.btn, flex: 1, fontSize: 11, borderColor: "#10b981", color: "#10b981" }} onClick={onImportExcelClick}><UploadCloud size={14} /> Import Excel</button>
         <input id="import-excel" type="file" accept=".xlsx" style={{ display: "none" }} onChange={onImportExcel} />
       </div>
 
@@ -505,7 +629,6 @@ function Dashboard({ records, navigate, getAnalytics, onExport, onImport, onExpo
 
 /* ─── Record Row ─────────────────────────────────────────────── */
 function RecordRow({ record, onClick }) {
-  const threat = getThreatLevel(record);
   return (
     <div onClick={onClick} style={{ ...css.card, display: "flex", alignItems: "center", gap: 12, cursor: "pointer", transition: "border-color 0.15s" }}
       onMouseEnter={e => e.currentTarget.style.borderColor = T.borderM}
@@ -631,7 +754,7 @@ function AccusedList({ records, allRecords, navigate, searchQuery, setSearchQuer
 }
 
 /* ─── Accused Detail ─────────────────────────────────────────── */
-function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuickUpdate }) {
+function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuickUpdate, isDemoMode }) {
   const [fullScreenImage, setFullScreenImage] = useState(null);
   const [showPdfOptions, setShowPdfOptions] = useState(false);
   const threat = getThreatLevel(record);
@@ -682,7 +805,9 @@ function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuic
               <select
                 value={record.status || ""}
                 onChange={(e) => onQuickUpdate && onQuickUpdate({ ...record, status: e.target.value })}
-                style={{ background: "transparent", border: "none", outline: "none", color: "inherit", fontWeight: "inherit", fontSize: "inherit", cursor: "pointer", paddingLeft: 4 }}
+                disabled={isDemoMode}
+                title={isDemoMode ? "Login with a registered police account to update status" : "Update status"}
+                style={{ background: "transparent", border: "none", outline: "none", color: "inherit", fontWeight: "inherit", fontSize: "inherit", cursor: isDemoMode ? "not-allowed" : "pointer", paddingLeft: 4 }}
               >
                 <option value="" disabled>Unknown</option>
                 <option value="Active">Active</option>
@@ -705,7 +830,7 @@ function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuic
         <button style={{ ...css.btn, flex: 1, fontSize: 12 }} onClick={() => navigate("form", { record })}>
           <Save size={14} /> Edit
         </button>
-        <button style={{ ...css.btnAccent, flex: 2, fontSize: 12, color: "#000", background: "#f59e0b" }} onClick={() => setShowPdfOptions(true)}>
+        <button style={{ ...css.btnAccent, flex: 2, fontSize: 12, color: "#000", background: "#f59e0b" }} onClick={() => isDemoMode ? onSharePDF(record, 'download') : setShowPdfOptions(true)}>
           <FileText size={14} /> Export Dossier
         </button>
         <button style={{ ...css.btn, flex: 1, fontSize: 12, color: T.red, borderColor: "color-mix(in srgb, var(--ct-red) 30%, transparent)" }} onClick={() => onDelete(record.id)}>
@@ -754,7 +879,7 @@ function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuic
 
       {showPdfOptions && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 20 }}>
-          <div style={{ ...css.card, maxWidth: 320, width: "100%", textAlign: "center" }}>
+          <div style={{ ...css.card, maxWidth: 360, width: "100%", textAlign: "center" }}>
             <div style={{ marginBottom: 18, fontSize: 16, color: T.text, fontWeight: 600 }}>PDF Export Options</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <button style={{ ...css.btnAccent, width: "100%" }} onClick={() => { setShowPdfOptions(false); onSharePDF(record, 'download'); }}>
@@ -801,16 +926,10 @@ const correctSpeech = (text) => {
     corrected = corrected.replace(regex, right);
   }
 
-  // Use compromise NLP for smarter text processing
-  try {
-    const doc = nlp(corrected);
-    // Fix capitalization of proper nouns and sentence starts
-    doc.sentences().toTitleCase();
-    corrected = doc.text();
-  } catch (e) { /* fallback to uncorrected */ }
-
-  // Capitalize first letter of the entire text
-  corrected = corrected.charAt(0).toUpperCase() + corrected.slice(1);
+  corrected = corrected
+    .split(/([.!?\n]\s*)/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
 
   // Fix multiple spaces
   corrected = corrected.replace(/\s{2,}/g, ' ').trim();
@@ -819,7 +938,7 @@ const correctSpeech = (text) => {
 };
 
 /* ─── Accused Form ───────────────────────────────────────────── */
-function AccusedForm({ record, onSave, goBack, activeDataSource, settings }) {
+function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHumanModel }) {
   const isEdit = !!record;
   const [form, setForm] = useState(record || {});
   const [saving, setSaving] = useState(false);
@@ -1002,6 +1121,7 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings }) {
     set("photo", base64Image);
 
     try {
+      const human = await getHumanModel();
       const result = await human.detect(canvas);
       if (result && result.face && result.face.length > 0 && result.face[0].embedding) {
         set("faceDescriptor", Array.from(result.face[0].embedding));
@@ -1111,7 +1231,7 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings }) {
 
       {/* Floating Mic Recording Overlay */}
       {dictatingKey && (
-        <div style={{ position: "fixed", bottom: 120, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.92)", border: `1.5px solid ${T.red}`, borderRadius: 16, padding: "14px 22px", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minWidth: 260, maxWidth: 320, boxShadow: "0 4px 32px rgba(239,68,68,0.3)" }}>
+        <div style={{ position: "fixed", bottom: 120, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.92)", border: `1.5px solid ${T.red}`, borderRadius: 16, padding: "14px 22px", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minWidth: 260, maxWidth: 360, boxShadow: "0 4px 32px rgba(239,68,68,0.3)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
               className="mic-active"
@@ -1197,7 +1317,7 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings }) {
 }
 
 /* ─── Database Excel Grid View ──────────────────────────────────────── */
-function DatabaseGridView({ records, onUpdateDatabase, goBack }) {
+function DatabaseGridView({ records, onUpdateDatabase }) {
   // Use fields except photo and notes for clean text grid
   const gridFields = FIELDS.filter(f => !["photo", "notes"].includes(f.key));
 
@@ -1301,21 +1421,19 @@ function DatabaseGridView({ records, onUpdateDatabase, goBack }) {
   );
 }
 
+function AnalyticsSection({ title, children }) {
+  return (
+    <div style={{ ...css.card, marginBottom: 16 }}>
+      <div style={{ ...css.sectionTitle, color: "var(--ct-accent)", fontSize: 13 }}>- {title}</div>
+      {children}
+    </div>
+  );
+}
+
 /* ─── Analytics ──────────────────────────────────────────────── */
 function Analytics({ getAnalytics, records }) {
   const { byYear, byStatus, bySex, byArea } = getAnalytics();
   const total = records.length;
-
-  const gangMap = {};
-  records.forEach(r => { if (r.gangLeader) gangMap[r.gangLeader] = (gangMap[r.gangLeader] || 0) + 1; });
-  const topGangs = Object.entries(gangMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g, c]) => ({ gang: g, count: c }));
-
-  const Section = ({ title, children }) => (
-    <div style={{ ...css.card, marginBottom: 16 }}>
-      <div style={{ ...css.sectionTitle, color: "var(--ct-accent)", fontSize: 13 }}>▸ {title}</div>
-      {children}
-    </div>
-  );
 
   return (
     <div style={{ padding: "72px 14px 14px" }}>
@@ -1334,7 +1452,7 @@ function Analytics({ getAnalytics, records }) {
         ))}
       </div>
 
-      <Section title="Cases by Year">
+      <AnalyticsSection title="Cases by Year">
         {byYear.length ? (
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={byYear} margin={{ top: 5, right: 5, bottom: 5, left: -20 }}>
@@ -1346,9 +1464,9 @@ function Analytics({ getAnalytics, records }) {
             </BarChart>
           </ResponsiveContainer>
         ) : <div style={{ color: "var(--ct-muted)", fontSize: 13 }}>No data</div>}
-      </Section>
+      </AnalyticsSection>
 
-      <Section title="Status Distribution">
+      <AnalyticsSection title="Status Distribution">
         {byStatus.length ? (
           <ResponsiveContainer width="100%" height={240}>
             <PieChart>
@@ -1372,9 +1490,9 @@ function Analytics({ getAnalytics, records }) {
             </PieChart>
           </ResponsiveContainer>
         ) : <div style={{ color: "var(--ct-muted)", fontSize: 13 }}>No data</div>}
-      </Section>
+      </AnalyticsSection>
 
-      <Section title="Demographics (Sex)">
+      <AnalyticsSection title="Demographics (Sex)">
         {bySex.length ? (
           <ResponsiveContainer width="100%" height={240}>
             <PieChart>
@@ -1399,9 +1517,9 @@ function Analytics({ getAnalytics, records }) {
             </PieChart>
           </ResponsiveContainer>
         ) : <div style={{ color: "var(--ct-muted)", fontSize: 13 }}>No data</div>}
-      </Section>
+      </AnalyticsSection>
 
-      <Section title="Top Hotspots (Areas)">
+      <AnalyticsSection title="Top Hotspots (Areas)">
         {byArea.length ? (
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={byArea} layout="vertical" margin={{ top: 5, right: 5, bottom: 5, left: 40 }}>
@@ -1413,7 +1531,7 @@ function Analytics({ getAnalytics, records }) {
             </BarChart>
           </ResponsiveContainer>
         ) : <div style={{ color: "var(--ct-muted)", fontSize: 13 }}>No data</div>}
-      </Section>
+      </AnalyticsSection>
     </div>
   );
 }
@@ -1457,7 +1575,7 @@ function About() {
   );
 }
 
-function NotificationsView({ goBack, notifications, clearNotifications }) {
+function NotificationsView({ notifications, clearNotifications }) {
   return (
     <div style={{ padding: "72px 14px 14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -1487,20 +1605,40 @@ function NotificationsView({ goBack, notifications, clearNotifications }) {
   );
 }
 
-function DocsView() {
+function DemoProfileView({ onExitDemo }) {
   return (
-    <div style={{ height: "100vh", paddingTop: 60, paddingBottom: 68, boxSizing: "border-box" }}>
-      <iframe src={`/docs.html?v=${Date.now()}`} style={{ width: "100%", height: "100%", border: "none", background: "var(--ct-bg)", display: "block" }} title="Documentation" />
+    <div style={{ padding: "72px 14px 80px", maxWidth: 800, margin: "0 auto" }}>
+      <div style={{ ...css.card, textAlign: "center", padding: 24 }}>
+        <Shield size={42} color={T.blue} />
+        <div style={{ fontSize: 20, fontWeight: 900, color: T.text, marginTop: 12 }}>Demo Officer</div>
+        <div style={{ fontSize: 12, color: T.muted, marginTop: 6 }}>{DEMO_PROFILE.policeId} - read-only preview</div>
+        <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.55, marginTop: 16 }}>
+          {DEMO_RESTRICTED_MESSAGE}
+        </div>
+        <button type="button" style={{ ...css.btnAccent, width: "100%", marginTop: 18 }} onClick={onExitDemo}>
+          Login or register officer
+        </button>
+      </div>
     </div>
   );
 }
+import docsHtml from '../public/docs.html?raw';
 
-function FaceSearch({ records, navigate, goBack, modelsLoaded }) {
+function DocsView() {
+  return (
+    <div style={{ height: "100dvh", paddingTop: 60, paddingBottom: 68, boxSizing: "border-box", display: "flex", flexDirection: "column", overflow: "auto", background: "var(--ct-bg)" }}>
+      <div 
+        style={{ padding: "16px", color: "var(--ct-text)" }}
+        dangerouslySetInnerHTML={{ __html: docsHtml }} 
+      />
+    </div>
+  );
+}
+function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHumanModel, activeDataSource, settings }) {
   const [photoSrc, setPhotoSrc] = useState(null);
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState(null);
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const scanLoopRef = useRef(null);
   const liveErrorRef = useRef(null);
   const [useCamera, setUseCamera] = useState(false);
@@ -1524,6 +1662,8 @@ function FaceSearch({ records, navigate, goBack, modelsLoaded }) {
     let scanStartTime = null;
     let consecutiveFrames = 0;
     try {
+      const human = await getHumanModel();
+      setModelsLoaded(true);
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -1635,20 +1775,21 @@ function FaceSearch({ records, navigate, goBack, modelsLoaded }) {
     }
   };
 
-  useEffect(() => { return stopCamera; }, []);
-
-  const handleCapture = () => {
-    if (!videoRef.current) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    canvas.getContext("2d").drawImage(videoRef.current, 0, 0);
-    const dataUrl = canvas.toDataURL("image/jpeg");
-    stopCamera();
-    setUseCamera(false);
-    setPhotoSrc(dataUrl);
-    runSearch(dataUrl);
-  };
+  useEffect(() => {
+    let mounted = true;
+    getHumanModel()
+      .then(() => {
+        if (mounted) setModelsLoaded(true);
+      })
+      .catch((e) => {
+        console.error("Failed to load Human AI models", e);
+        if (mounted) setModelsLoaded(false);
+      });
+    return () => {
+      mounted = false;
+      stopCamera();
+    };
+  }, [getHumanModel, setModelsLoaded]);
 
   const handleUpload = (e) => {
     const file = e.target.files[0];
@@ -1664,6 +1805,8 @@ function FaceSearch({ records, navigate, goBack, modelsLoaded }) {
   const runSearch = async (imgSrc) => {
     setSearching(true);
     setResult(null);
+    const human = await getHumanModel();
+    setModelsLoaded(true);
 
     const img = new Image();
     img.src = imgSrc;
@@ -1795,7 +1938,7 @@ function FaceSearch({ records, navigate, goBack, modelsLoaded }) {
             Make sure your face is clearly visible
           </div>
 
-          <div style={{ display: "flex", gap: 12, width: "100%", maxWidth: 280, marginTop: 40 }}>
+          <div style={{ display: "flex", gap: 12, width: "100%", maxWidth: 360, marginTop: 40 }}>
             <button style={{ ...css.btn, flex: 1, padding: 12, fontSize: 14, borderColor: "#000", color: "#000" }} onClick={() => startCamera(facingMode === "environment" ? "user" : "environment")}>
               Flip Camera
             </button>
@@ -1807,7 +1950,7 @@ function FaceSearch({ records, navigate, goBack, modelsLoaded }) {
       )}
 
       {photoSrc && (
-        <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", alignItems: "center" }}>
           <img src={photoSrc} style={{ width: "100%", borderRadius: 12, border: `2px solid ${T.accent}`, marginBottom: 16 }} />
 
           {searching && (
@@ -1841,7 +1984,7 @@ function FaceSearch({ records, navigate, goBack, modelsLoaded }) {
 }
 
 /* ─── CompareView ────────────────────────────────────────────── */
-function CompareView({ records, goBack }) {
+function CompareView({ records }) {
   const [suspect1Id, setSuspect1Id] = useState("");
   const [suspect2Id, setSuspect2Id] = useState("");
 
@@ -1896,6 +2039,61 @@ function CompareView({ records, goBack }) {
         {renderSuspect(s1, setSuspect1Id)}
         {renderSuspect(s2, setSuspect2Id)}
       </div>
+    </div>
+  );
+}
+
+/* ─── PinManager ────────────────────────────────────────────── */
+function PinManager({ css, T, toastShow }) {
+  const [newPin, setNewPin] = useState("");
+  const [pinMsg, setPinMsg] = useState("");
+  const [hasPin, setHasPin] = useState(!!localStorage.getItem("crimetrack_pin"));
+
+  const savePin = () => {
+    if (newPin.length < 4) { setPinMsg("PIN must be at least 4 digits."); return; }
+    localStorage.setItem("crimetrack_pin", newPin);
+    setNewPin("");
+    setHasPin(true);
+    setPinMsg("✅ PIN updated! App will lock on next login.");
+    toastShow?.("PIN updated!", "success");
+  };
+
+  const removePin = () => {
+    localStorage.removeItem("crimetrack_pin");
+    setHasPin(false);
+    setPinMsg("🔓 PIN removed. App will open without a lock screen.");
+    toastShow?.("PIN removed", "success");
+  };
+
+  return (
+    <div style={{ ...css.card, display: "flex", flexDirection: "column", gap: 14, padding: 16, marginTop: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.accent }}>🔐 App PIN Lock</div>
+      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
+        {hasPin
+          ? "✅ PIN is active. The app will require your PIN on next login."
+          : "⚠️ No PIN set. The app opens without a lock screen."}
+      </div>
+      <input
+        type="password"
+        inputMode="numeric"
+        maxLength={8}
+        placeholder="New PIN (min 4 digits)"
+        value={newPin}
+        onChange={e => { setNewPin(e.target.value); setPinMsg(""); }}
+        onKeyDown={e => e.key === "Enter" && savePin()}
+        style={css.input}
+      />
+      <div style={{ display: "flex", gap: 10 }}>
+        <button style={{ ...css.btnAccent, flex: 1 }} onClick={savePin}>
+          {hasPin ? "Change PIN" : "Set PIN"}
+        </button>
+        {hasPin && (
+          <button style={{ ...css.btn, flex: 1, borderColor: T.red + "44", color: T.red }} onClick={removePin}>
+            Remove PIN
+          </button>
+        )}
+      </div>
+      {pinMsg && <div style={{ fontSize: 12, color: pinMsg.startsWith("✅") ? T.green : T.red }}>{pinMsg}</div>}
     </div>
   );
 }
@@ -1976,7 +2174,7 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
         Theme: {timeTheme?.label || "Auto"} ({timeTheme?.period || "—"})
       </div>
 
-      <button 
+      <button
         style={{ ...css.btnAccent, width: "100%", marginBottom: 20, padding: "14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 14 }}
         onClick={() => navigate && navigate("docs")}
       >
@@ -2026,12 +2224,12 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
           </div>
         </div>
         <button style={{ ...css.btnAccent, width: "100%", padding: "12px", opacity: (!migrateTo || migrating) ? 0.5 : 1, pointerEvents: (!migrateTo || migrating) ? "none" : "auto" }} onClick={async () => {
-            if (!migrateTo || migrateTo === migrateFrom) return;
-            if (!confirm(`Are you sure you want to overwrite ${migrateTo} with data from ${migrateFrom}?`)) return;
-            setMigrating(true);
-            try { await onMigrateData(migrateFrom, migrateTo); toastShow("Migration successful!"); }
-            catch (e) { toastShow(e.message || "Migration failed", "danger"); }
-            setMigrating(false);
+          if (!migrateTo || migrateTo === migrateFrom) return;
+          if (!confirm(`Are you sure you want to overwrite ${migrateTo} with data from ${migrateFrom}?`)) return;
+          setMigrating(true);
+          try { await onMigrateData(migrateFrom, migrateTo); toastShow("Migration successful!"); }
+          catch (e) { toastShow(e.message || "Migration failed", "danger"); }
+          setMigrating(false);
         }}>
           {migrating ? "Migrating Data..." : "Start Migration"}
         </button>
@@ -2128,9 +2326,9 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
           </div>
         </label>
 
-        <button style={{ ...css.btnAccent, opacity: sheetsReady ? 1 : 0.55 }} disabled={!sheetsReady} onClick={saveGoogleSettings}>
+        <button style={{ ...css.btnAccent, opacity: sheetsReady && !isTestingGoogle ? 1 : 0.55 }} disabled={!sheetsReady || isTestingGoogle} onClick={saveGoogleSettings}>
           <Cloud size={14} />
-          Save Google Sheets setup
+          {isTestingGoogle ? "Testing Google..." : "Save Google Sheets setup"}
         </button>
 
         {isGoogleSheetsConfigured(settings) && (
@@ -2146,7 +2344,7 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
       {/* Custom Database Sync */}
       <div style={{ ...css.card, display: "flex", flexDirection: "column", gap: 16, padding: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.accent }}>Custom Database API</div>
-        
+
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <div style={{ flex: 1 }}>
             <label style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", display: "block", marginBottom: 6 }}>Database Type</label>
@@ -2163,9 +2361,9 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ct-accent)", marginBottom: 6 }}>MySQL Auto-Setup Available</div>
             <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.55 }}>
               React cannot connect directly to MySQL for security. We've provided a Node.js server script that auto-creates the DB and tables!
-              <br/><br/>
-              1. Grab <code>backend-mysql.js</code> from the app's public folder.<br/>
-              2. Run <code>node backend-mysql.js</code> on your server.<br/>
+              <br /><br />
+              1. Grab <code>backend-mysql.js</code> from the app's public folder.<br />
+              2. Run <code>node backend-mysql.js</code> on your server.<br />
               3. Paste the server URL below.
             </div>
           </div>
@@ -2176,9 +2374,9 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ct-green)", marginBottom: 6 }}>MongoDB Auto-Setup Available</div>
             <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.55 }}>
               React cannot connect directly to MongoDB. We've provided a Node.js server script that auto-creates the collection!
-              <br/><br/>
-              1. Grab <code>backend-mongo.js</code> from the app's public folder.<br/>
-              2. Run <code>node backend-mongo.js</code> on your server.<br/>
+              <br /><br />
+              1. Grab <code>backend-mongo.js</code> from the app's public folder.<br />
+              2. Run <code>node backend-mongo.js</code> on your server.<br />
               3. Paste the server URL below.
             </div>
           </div>
@@ -2194,9 +2392,9 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
           <span style={{ fontSize: 12 }}>Enable Background Sync</span>
         </label>
 
-        <button 
-          style={{ ...css.btnAccent, opacity: (s.dbApiUrl || "").trim() ? 1 : 0.5 }} 
-          disabled={!(s.dbApiUrl || "").trim()} 
+        <button
+          style={{ ...css.btnAccent, opacity: (s.dbApiUrl || "").trim() ? 1 : 0.5 }}
+          disabled={!(s.dbApiUrl || "").trim()}
           onClick={async () => {
             const url = (s.dbApiUrl || "").trim();
             if (!url) return;
@@ -2207,7 +2405,9 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
                 try {
                   const r = await fetch(`${url.replace(/\/$/, "")}${p}`);
                   if (r.ok) { success = true; break; }
-                } catch (e) {}
+                } catch {
+                  // Try the next common API path.
+                }
               }
               if (!success) {
                 toastShow?.("Connection Failed! Is your server running?", "error");
@@ -2220,7 +2420,7 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
             }
           }}
         >
-          <Database size={14} style={{ display: "inline-block", marginRight: 8, verticalAlign: "middle" }}/>
+          <Database size={14} style={{ display: "inline-block", marginRight: 8, verticalAlign: "middle" }} />
           Save Configuration
         </button>
       </div>
@@ -2228,10 +2428,10 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
       {/* Enterprise Security */}
       <div style={{ ...css.card, display: "flex", flexDirection: "column", gap: 16, padding: 16, marginTop: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.accent }}>Enterprise Security</div>
-        
+
         <div>
           <label style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", display: "block", marginBottom: 6 }}>Officer ID / Badge Number (For Audit Logs)</label>
-          <input style={css.input} placeholder="e.g. Officer 405" value={s.officerId || ""} onChange={e => setS({ ...s, officerId: e.target.value })} autoComplete="off" />
+          <input style={{ ...css.input, cursor: "not-allowed", opacity: 0.7 }} placeholder="e.g. Officer 405" value={s.officerId || ""} readOnly autoComplete="off" />
         </div>
 
         <div>
@@ -2245,8 +2445,8 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
           <div style={{ fontSize: 10, color: "var(--ct-red)", marginTop: 6 }}>WARNING: Changing this key will render existing encrypted databases unreadable!</div>
         </div>
 
-        <button 
-          style={css.btnAccent} 
+        <button
+          style={css.btnAccent}
           onClick={() => {
             saveSettings(s);
             toastShow?.("Security Settings Saved!", "success");
@@ -2255,12 +2455,17 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
           Save Security Settings
         </button>
       </div>
+
+      {/* App PIN Lock */}
+      <PinManager css={css} T={T} toastShow={toastShow} />
     </div>
   );
 }
 
+
 export default function App() {
   const [records, setRecords] = useState([]);
+
   const [settings, setSettings] = useState(() => {
     const raw = localStorage.getItem("crimetrack_settings");
     const defaults = {
@@ -2300,6 +2505,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("dashboard");
   const [navStack, setNavStack] = useState([]);
+
   const [selectedId, setSelectedId] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -2308,10 +2514,13 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authError, setAuthError] = useState("");
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [pinMode, setPinMode] = useState("none");
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
+  const [pendingName, setPendingName] = useState(""); // officer name shown on PIN screen
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [timeTheme, setTimeTheme] = useState(() => {
     const t = getTimeBasedTheme();
@@ -2328,12 +2537,58 @@ export default function App() {
       document.documentElement.style.setProperty(key, value);
     });
   }, [timeTheme]);
+
+  // Initialize Native Google Sign-In on app startup
+  useEffect(() => {
+    initializeNativeGoogleSignIn();
+  }, []);
+
   const [showGoogleSync, setShowGoogleSync] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMode, setSyncMode] = useState('append');
   const [sourceLoading, setSourceLoading] = useState(false);
   const [gridSaving, setGridSaving] = useState(false);
   const isOnline = useNetworkStatus();
+
+  useEffect(() => {
+    if (!auth || isDemoMode) return undefined;
+    return onAuthStateChanged(auth, async (user) => {
+      if (!user || !user.emailVerified) {
+        setCurrentUser(null);
+        setProfile(null);
+        setIsAuthenticated(false);
+        return;
+      }
+
+      let officerProfile = null;
+      try {
+        const cached = JSON.parse(localStorage.getItem("crimetrack_auth_profile") || "null");
+        if (cached?.uid === user.uid && cached?.policeId) officerProfile = cached;
+      } catch {
+        officerProfile = null;
+      }
+
+      if (!officerProfile && db) {
+        try {
+          const snap = await getDoc(doc(db, "users", user.uid));
+          if (snap.exists()) {
+            officerProfile = { uid: user.uid, ...snap.data() };
+            localStorage.setItem("crimetrack_auth_profile", JSON.stringify(officerProfile));
+          }
+        } catch (err) {
+          console.warn("Firebase profile restore failed:", err);
+        }
+      }
+
+      if (officerProfile?.policeId) {
+        handleLoginSuccess(user, officerProfile);
+      } else {
+        setCurrentUser(null);
+        setProfile(null);
+        setIsAuthenticated(false);
+      }
+    });
+  }, [isDemoMode]);
 
   const [notifications, setNotifications] = useState(() => {
     const saved = localStorage.getItem("crimetrack_notifications");
@@ -2342,7 +2597,7 @@ export default function App() {
 
   const addNotification = (title, text, type = "system") => {
     setNotifications(prev => {
-      const newNotifs = [{ id: Date.now(), title, text, type, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }, ...prev].slice(0, 50);
+      const newNotifs = [{ id: Date.now(), title, text, type, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...prev].slice(0, 50);
       localStorage.setItem("crimetrack_notifications", JSON.stringify(newNotifs));
       return newNotifs;
     });
@@ -2375,7 +2630,8 @@ export default function App() {
   const lastSeenLogRef = useRef(new Date().toISOString());
 
   useEffect(() => {
-    if (!settings.backgroundSync || activeDataSource === SOURCES.LOCAL || !isOnline) return;
+    const syncEnabled = activeDataSource === "google" ? settings.enableGoogleSync : settings.enableDbSync;
+    if (!syncEnabled || activeDataSource === "local" || !isOnline) return;
     const intervalId = setInterval(async () => {
       try {
         const freshRecords = await loadRecordsForSource(activeDataSource, settings);
@@ -2388,14 +2644,14 @@ export default function App() {
                 const msg = `Database updated remotely. Fetched ${freshRecords.length} records.`;
                 addNotification("Remote Sync", msg, "system");
                 if ("Notification" in window && Notification.permission === "granted") {
-                  new Notification("CrimeTrack Alert", { body: msg, icon: "/icon.png" });
+                  new Notification("C.A.S.E Alert", { body: msg, icon: "/icon.png" });
                 }
               }
             }
             return freshRecords;
           });
         }
-        
+
         const freshLogs = await loadLogsForSource(activeDataSource, settings);
         if (freshLogs && Array.isArray(freshLogs) && freshLogs.length > 0) {
           const newLogs = freshLogs.filter(l => l.timestamp > lastSeenLogRef.current);
@@ -2408,22 +2664,22 @@ export default function App() {
               const msg = `${log.officerId || "An Officer"} performed: ${log.event}\n${log.details}`;
               addNotification("Audit Log Alert", msg, "system");
               if ("Notification" in window && Notification.permission === "granted") {
-                new Notification("CrimeTrack Alert", { body: msg, icon: "/icon.png" });
+                new Notification("C.A.S.E Alert", { body: msg, icon: "/icon.png" });
               }
             });
           }
         }
-      } catch(e) {
+      } catch (e) {
         // Silently fail for background sync to avoid spamming toasts
         console.warn("Background sync failed:", e);
       }
     }, 15000); // 15 second interval
     return () => clearInterval(intervalId);
-  }, [settings.backgroundSync, activeDataSource, settings.googleWebAppUrl, settings.dbApiUrl, isOnline]);
+  }, [activeDataSource, settings, isOnline]);
 
   useEffect(() => {
     loadData();
-    performBiometricAuth();
+    // Note: PIN lock is triggered by handleLoginSuccess via Firebase onAuthStateChanged
     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
       Notification.requestPermission();
     }
@@ -2431,18 +2687,8 @@ export default function App() {
     // Update time-based theme every minute
     const themeInterval = setInterval(() => setTimeTheme(getTimeBasedTheme()), 60000);
 
-    const loadModels = async () => {
-      try {
-        await human.load();
-        await human.warmup();
-        setModelsLoaded(true);
-      } catch (e) {
-        console.error("Failed to load Human AI models", e);
-      }
-    };
-    loadModels();
     if (Capacitor.isNativePlatform()) {
-      CapApp.addListener('backButton', ({ canGoBack }) => {
+      CapApp.addListener('backButton', () => {
         setNavStack(currentStack => {
           if (currentStack.length > 0) {
             const prev = currentStack[currentStack.length - 1];
@@ -2463,7 +2709,45 @@ export default function App() {
         CapApp.removeAllListeners();
       }
     };
-  }, []);
+    // This startup effect is intentionally mount-only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+  const [globalNotification, setGlobalNotification] = useState(null);
+  const [listenStart] = useState(() => new Date());
+
+  const broadcastNotification = async (actionType, recordName) => {
+    if (!db || !currentUser || !isAuthenticated || isDemoMode) return;
+    try {
+      await addDoc(collection(db, 'global_notifications'), {
+        actionType,
+        recordName,
+        officerName: profile?.name || currentUser.email,
+        officerPhoto: profile?.photoUrl || null,
+        officerId: currentUser.uid,
+        timestamp: serverTimestamp()
+      });
+    } catch (err) {
+      console.warn("Failed to broadcast notification", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated || !db || isDemoMode) return;
+    const q = query(collection(db, 'global_notifications'), where('timestamp', '>', listenStart), orderBy('timestamp', 'desc'), limit(1));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
+          if (data.officerId !== currentUser?.uid) {
+            setGlobalNotification({ ...data, id: change.doc.id });
+            setTimeout(() => setGlobalNotification(null), 5000);
+          }
+        }
+      });
+    });
+    return () => unsubscribe();
+  }, [isAuthenticated, listenStart, currentUser, isDemoMode]);
 
   const loadData = () => {
     try {
@@ -2476,7 +2760,41 @@ export default function App() {
     setLoading(false);
   };
 
+  const showDemoRestriction = (action = "This feature") => {
+    toast_show(`${action} is disabled in demo mode. Login with a registered police account to continue.`, "warning");
+  };
+
+  const requireLiveSession = (action) => {
+    if (!isDemoMode) return true;
+    showDemoRestriction(action);
+    return false;
+  };
+
+  const enterDemoMode = () => {
+    setIsDemoMode(true);
+    setCurrentUser(DEMO_USER);
+    setProfile(DEMO_PROFILE);
+    setIsAuthenticated(true);
+    setRecords(DEMO_RECORDS);
+    setView("dashboard");
+    setNavStack([]);
+    setSelectedId(null);
+    setEditingRecord(null);
+    toast_show("Demo preview opened in read-only mode.", "warning");
+  };
+
+  const exitDemoMode = () => {
+    setIsDemoMode(false);
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setProfile(null);
+    setView("dashboard");
+    setNavStack([]);
+    loadData();
+  };
+
   const handleMigrateData = async (fromSource, toSource) => {
+    if (!requireLiveSession("Database migration")) return;
     if (fromSource === toSource) throw new Error("Cannot migrate to the same source");
     let data;
     if (fromSource === "local") {
@@ -2493,11 +2811,15 @@ export default function App() {
       await saveRecordsForSource(toSource, settings, data);
       if (activeDataSource === toSource) setRecords(data);
     }
-    
+
     addNotification("Data Migration", `Migrated ${data.length} records from ${SOURCE_UI[fromSource]?.label || fromSource} to ${SOURCE_UI[toSource]?.label || toSource}.`, "sync");
   };
 
   const handleSelectSource = (source) => {
+    if (isDemoMode && source !== "local") {
+      showDemoRestriction("Remote data sources");
+      return;
+    }
     if (source !== "local") {
       setRecords([]);
     } else {
@@ -2509,6 +2831,15 @@ export default function App() {
   };
 
   const handleLoadSource = async (source) => {
+    if (isDemoMode) {
+      if (source !== "local") {
+        showDemoRestriction("Remote data loading");
+        return;
+      }
+      setRecords(DEMO_RECORDS);
+      toast_show("Demo records refreshed.", "success");
+      return;
+    }
     setSourceLoading(true);
     try {
       let data;
@@ -2534,6 +2865,10 @@ export default function App() {
   };
 
   const persist = async (recs) => {
+    if (isDemoMode) {
+      showDemoRestriction("Saving changes");
+      return;
+    }
     setRecords(recs);
     try {
       localStorage.setItem("crimetrack_v3", encryptData(recs));
@@ -2552,6 +2887,7 @@ export default function App() {
   };
 
   const saveGridToSource = async (recs) => {
+    if (!requireLiveSession("Saving spreadsheet changes")) return;
     setGridSaving(true);
     try {
       await persist(recs);
@@ -2566,56 +2902,65 @@ export default function App() {
     }
   };
 
-  const performBiometricAuth = async () => {
-    if (!Capacitor.isNativePlatform()) {
-      const savedPin = localStorage.getItem("crimetrack_pin");
-      if (savedPin) setPinMode("verify");
-      else setPinMode("setup");
-      return;
-    }
-    try {
-      setAuthError("");
-      await NativeBiometric.verifyIdentity({
-        reason: "Unlock CrimeTrack Pro",
-        title: "App Locked",
-        subtitle: "Authenticate to access records",
-        description: "Please authenticate with your Face ID, Fingerprint, or PIN.",
-        useFallback: true
+  // Called after correct PIN verify/setup — actually unlocks the app
+  const unlockAfterPin = (user, officerProfile) => {
+    setIsAuthenticated(true);
+    setPinMode("none");
+    setPinInput("");
+    setPinError("");
+    if (officerProfile) {
+      setSettings((current) => {
+        const next = {
+          ...current,
+          officerId: officerProfile.policeId || current.officerId,
+          officerName: officerProfile.name || current.officerName,
+          policeProfile: officerProfile,
+        };
+        localStorage.setItem("crimetrack_settings", JSON.stringify(next));
+        return next;
       });
-      setIsAuthenticated(true);
-    } catch (err) {
-      console.error("Auth failed:", err);
-      if (settings.appPin) {
-        setAuthError("");
-        setPinMode("verify");
-      } else {
-        setAuthError("Authentication failed or was canceled.");
-      }
     }
   };
 
+  // Refs to carry user/profile through the PIN flow
+  const pendingUserRef = useRef(null);
+  const pendingProfileRef = useRef(null);
+
   const handlePinSubmit = () => {
+    const user = pendingUserRef.current;
+    const officerProfile = pendingProfileRef.current;
     if (pinMode === "setup") {
       if (pinInput.length < 4) {
-        setPinError("PIN must be at least 4 characters.");
+        setPinError("PIN must be at least 4 digits.");
         return;
       }
       localStorage.setItem("crimetrack_pin", pinInput);
-      setPinMode("none");
-      setIsAuthenticated(true);
+      unlockAfterPin(user, officerProfile);
     } else if (pinMode === "verify") {
       const savedPin = localStorage.getItem("crimetrack_pin");
       if (pinInput === savedPin) {
-        setPinMode("none");
-        setIsAuthenticated(true);
+        unlockAfterPin(user, officerProfile);
       } else {
-        setPinError("Incorrect PIN.");
+        setPinError("Incorrect PIN. Try again.");
         setPinInput("");
       }
     }
   };
 
+  // Skip PIN (only during setup — officer chooses not to use PIN lock)
+  const handleSkipPin = () => {
+    const user = pendingUserRef.current;
+    const officerProfile = pendingProfileRef.current;
+    localStorage.removeItem("crimetrack_pin");
+    unlockAfterPin(user, officerProfile);
+  };
+
   const navigate = (newView, params = {}) => {
+    const restrictedViews = new Set(["form", "grid", "livegrid", "databasegrid", "settings", "sheets", "operations"]);
+    if (isDemoMode && restrictedViews.has(newView)) {
+      showDemoRestriction("This tool");
+      return;
+    }
     setNavStack(s => [...s, { view, selectedId, editingRecord }]);
     setView(newView);
     if (params.id !== undefined) setSelectedId(params.id);
@@ -2632,6 +2977,11 @@ export default function App() {
   };
 
   const navTo = (tab) => {
+    const restrictedTabs = new Set(["operations", "sheets"]);
+    if (isDemoMode && restrictedTabs.has(tab)) {
+      showDemoRestriction(tab === "operations" ? "Secure operations room" : "Google Sheets");
+      return;
+    }
     setNavStack([]); setView(tab); setSelectedId(null); setEditingRecord(null);
     setSearchQuery("");
   };
@@ -2641,12 +2991,36 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const addRecord = async (r, targetSource = activeDataSource) => { 
-    const rec = { ...r, id: genId(), createdAt: new Date().toISOString() }; 
+  const handleLoginSuccess = (user, officerProfile) => {
+    setIsDemoMode(false);
+    setCurrentUser(user);
+    setProfile(officerProfile || null);
+    setPendingName(officerProfile?.name || user?.email || "");
+    // Store pending credentials for the PIN flow
+    pendingUserRef.current = user;
+    pendingProfileRef.current = officerProfile || null;
+    setPinInput("");
+    setPinError("");
+    // Check if officer has set a PIN
+    const savedPin = localStorage.getItem("crimetrack_pin");
+    if (savedPin) {
+      // PIN exists — ask them to verify it before unlocking
+      setPinMode("verify");
+    } else {
+      // No PIN yet — ask them to set one (can skip)
+      setPinMode("setup");
+    }
+  };
+
+  const addRecord = async (r, targetSource = activeDataSource) => {
+    if (!requireLiveSession("Adding records")) return;
+    // Preserve existing id if record comes from OperationsRoom (already has one)
+    const rec = { ...r, id: r.id || genId(), createdAt: r.createdAt || new Date().toISOString() };
     if (targetSource === activeDataSource) {
-      await persist([...records, rec]); 
-      toast_show("Record added"); 
-      goBack(); 
+      await persist([...records, rec]);
+      toast_show("Record added");
+      // Don't navigate away if currently in Operations Room
+      if (view !== "operations") goBack();
     } else {
       setSourceLoading(true);
       try {
@@ -2667,7 +3041,8 @@ export default function App() {
         }
         toast_show(`Record added to ${SOURCE_UI[targetSource]?.label || targetSource}`);
         addNotification("Record Added", `Successfully saved ${rec.name} to ${SOURCE_UI[targetSource]?.label || targetSource}.`, "system");
-        goBack();
+        broadcastNotification("added record", rec.name || "Unknown");
+        if (view !== "operations") goBack();
       } catch (err) {
         toast_show(err.message || "Save failed", "danger");
       } finally {
@@ -2675,15 +3050,33 @@ export default function App() {
       }
     }
   };
-  const updateEntireDatabase = async (newRecs) => { await persist(newRecs); toast_show("Database updated!"); addNotification("Database Updated", "Bulk update successful.", "system"); goBack(); };
-  const updateRecord = async (r) => { await persist(records.map(x => x.id === r.id ? { ...r, updatedAt: new Date().toISOString() } : x)); toast_show("Record updated"); addNotification("Record Updated", `Successfully updated ${r.name}.`, "system"); goBack(); };
-  const quickUpdateRecord = async (r) => { await persist(records.map(x => x.id === r.id ? { ...r, updatedAt: new Date().toISOString() } : x)); toast_show("Status updated"); addNotification("Status Updated", `Successfully updated status for ${r.name}.`, "system"); };
-  const deleteRecord = async (id) => { 
-    setDeleteConfirm(null); 
-    if (view === "detail") goBack(); 
-    await persist(records.filter(r => r.id !== id)); 
-    toast_show("Record deleted", "danger"); 
-    addNotification("Record Deleted", `Successfully deleted a record.`, "alert"); 
+  const updateEntireDatabase = async (newRecs) => {
+    if (!requireLiveSession("Bulk database editing")) return;
+    await persist(newRecs); toast_show("Database updated!"); addNotification("Database Updated", "Bulk update successful.", "system"); goBack();
+  };
+  const updateRecord = async (r) => {
+    if (!requireLiveSession("Editing records")) return;
+    await persist(records.map(x => x.id === r.id ? { ...r, updatedAt: new Date().toISOString() } : x)); toast_show("Record updated"); addNotification("Record Updated", `Successfully updated ${r.name}.`, "system"); 
+    broadcastNotification("updated record", r.name || "Unknown");
+    goBack();
+  };
+  const quickUpdateRecord = async (r) => {
+    if (!requireLiveSession("Quick status updates")) return;
+    await persist(records.map(x => x.id === r.id ? { ...r, updatedAt: new Date().toISOString() } : x)); toast_show("Status updated"); addNotification("Status Updated", `Successfully updated status for ${r.name}.`, "system");
+    broadcastNotification("updated status for", r.name || "Unknown");
+  };
+  const deleteRecord = async (id) => {
+    if (!requireLiveSession("Deleting records")) {
+      setDeleteConfirm(null);
+      return;
+    }
+    setDeleteConfirm(null);
+    if (view === "detail") goBack();
+    const recToDelete = records.find(r => r.id === id);
+    if (recToDelete) broadcastNotification("deleted record", recToDelete.name || "Unknown");
+    await persist(records.filter(r => r.id !== id));
+    toast_show("Record deleted", "danger");
+    addNotification("Record Deleted", `Successfully deleted a record.`, "alert");
   };
 
   // Replaced broken AI search with robust local multi-term matching
@@ -2706,6 +3099,7 @@ export default function App() {
 
   // Offline Backup Capabilities
   const handleExportData = async () => {
+    if (!requireLiveSession("Exporting backups")) return;
     toast_show("Generating backup ZIP...");
     try {
       if (Capacitor.isNativePlatform()) {
@@ -2715,6 +3109,7 @@ export default function App() {
           return;
         }
       }
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       const recordsWithoutImages = records.map(r => {
         const { photo, ...rest } = r;
@@ -2728,7 +3123,7 @@ export default function App() {
       });
       zip.file("data.json", JSON.stringify(recordsWithoutImages, null, 2));
       const zipBase64 = await zip.generateAsync({ type: "base64" });
-      const fileName = `CrimeTrack_Backup_${new Date().getTime()}.zip`;
+      const fileName = `C.A.S.E_Backup_${new Date().getTime()}.zip`;
 
       if (Capacitor.isNativePlatform()) {
         await Filesystem.writeFile({
@@ -2754,6 +3149,10 @@ export default function App() {
   };
 
   const handleImportData = async (e) => {
+    if (!requireLiveSession("Restoring backups")) {
+      if (e?.target) e.target.value = "";
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     try {
@@ -2771,6 +3170,7 @@ export default function App() {
       }
 
       // Process new ZIP backups
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       const zipContent = await zip.loadAsync(file);
 
@@ -2800,8 +3200,10 @@ export default function App() {
   };
 
   const handleExportExcel = async () => {
+    if (!requireLiveSession("Exporting Excel")) return;
     toast_show("Generating Excel file...");
-    try {
+      try {
+      const { default: ExcelJS } = await import("exceljs");
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet("Records");
       sheet.columns = EXCEL_COLUMNS;
@@ -2813,7 +3215,7 @@ export default function App() {
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
-      const fileName = `CrimeTrack_Export_${new Date().getTime()}.xlsx`;
+      const fileName = `C.A.S.E_Export_${new Date().getTime()}.xlsx`;
 
       if (Capacitor.isNativePlatform()) {
         const base64Str = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
@@ -2840,10 +3242,15 @@ export default function App() {
   };
 
   const handleImportExcel = async (e) => {
+    if (!requireLiveSession("Importing Excel")) {
+      if (e?.target) e.target.value = "";
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     try {
       toast_show("Importing from Excel...");
+      const { default: ExcelJS } = await import("exceljs");
       const buffer = await file.arrayBuffer();
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer);
@@ -2908,8 +3315,13 @@ export default function App() {
   };
 
   const generateAndSharePDF = async (record, actionType = 'share') => {
+    if (!requireLiveSession("PDF export and sharing")) return;
     toast_show("Generating PDF...");
-    try {
+      try {
+      const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
       const doc = new jsPDF();
       doc.setFontSize(22);
       doc.setTextColor(245, 158, 11);
@@ -2972,7 +3384,7 @@ export default function App() {
           return;
         }
         const base64 = doc.output('datauristring').split(',')[1];
-        const fileName = `CrimeTrack_${record.name.replace(/\s+/g, '_')}_${record.id}.pdf`;
+        const fileName = `C.A.S.E_${record.name.replace(/\s+/g, '_')}_${record.id}.pdf`;
 
         if (actionType === 'download') {
           await Filesystem.writeFile({
@@ -2999,7 +3411,7 @@ export default function App() {
           }
         }
       } else {
-        doc.save(`CrimeTrack_${record.name.replace(/\s+/g, '_')}.pdf`);
+        doc.save(`C.A.S.E_${record.name.replace(/\\s+/g, '_')}.pdf`);
         toast_show("PDF downloaded.");
       }
     } catch (err) {
@@ -3043,10 +3455,10 @@ export default function App() {
       <div className="ct-ambient" aria-hidden />
       <div className="ct-scrim" aria-hidden />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div className="ct-glass" style={{ ...css.card, textAlign: "center", maxWidth: 320, width: "100%" }}>
+        <div className="ct-glass" style={{ ...css.card, textAlign: "center", maxWidth: 360, width: "100%" }}>
           <Shield size={48} color={timeTheme.accentColor} />
-          <div className="ct-title" style={{ fontSize: 18, fontWeight: 800, marginTop: 12 }}>CrimeTrack</div>
-          <div className="ct-muted" style={{ fontSize: 13, marginTop: 8 }}>Loading offline database…</div>
+          <div className="ct-title" style={{ fontSize: 18, fontWeight: 800, marginTop: 12 }}>C.A.S.E</div>
+          <div className="ct-muted" style={{ fontSize: 13, marginTop: 8 }}>Loading offline database...</div>
         </div>
       </div>
     </div>
@@ -3059,22 +3471,59 @@ export default function App() {
       <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div className="ct-glass" style={{ ...css.card, textAlign: "center", maxWidth: 360, width: "100%" }}>
           <Shield size={56} color={timeTheme.accentColor} />
-          <div className="ct-title" style={{ fontSize: 20, fontWeight: 800, marginTop: 12 }}>CrimeTrack</div>
-          <div style={{ color: "var(--ct-text)", fontSize: 14, marginTop: 8 }}>
-            {pinMode === "setup" ? "Set a 4-digit security PIN" : "Enter your security PIN"}
+          <div className="ct-title" style={{ fontSize: 20, fontWeight: 800, marginTop: 12 }}>C.A.S.E</div>
+          <div style={{ color: "var(--ct-muted)", fontSize: 13, marginTop: 6 }}>
+            {pinMode === "setup"
+              ? "Create a PIN to lock the app when you return"
+              : `Welcome back, ${pendingName || "Officer"}`}
+          </div>
+          <div style={{ color: "var(--ct-text)", fontSize: 14, marginTop: 10, fontWeight: 600 }}>
+            {pinMode === "setup" ? "Set a 4-digit PIN" : "Enter your PIN to unlock"}
           </div>
           <input
             type="password"
+            inputMode="numeric"
             value={pinInput}
-            onChange={e => setPinInput(e.target.value)}
+            onChange={e => { setPinInput(e.target.value); setPinError(""); }}
+            onKeyDown={e => e.key === "Enter" && handlePinSubmit()}
             maxLength={8}
-            style={{ ...css.input, textAlign: "center", fontSize: 24, letterSpacing: 8, width: "100%", maxWidth: 200, margin: "16px auto 0" }}
+            autoFocus
+            style={{ ...css.input, textAlign: "center", fontSize: 28, letterSpacing: 10, width: "100%", maxWidth: 220, margin: "16px auto 0" }}
             placeholder="••••"
           />
-          {pinError && <div style={{ color: "var(--ct-red)", fontSize: 13, marginTop: 8 }}>{pinError}</div>}
-          <button style={{ ...css.btnAccent, width: "100%", marginTop: 16 }} onClick={handlePinSubmit}>
-            <Lock size={18} /> {pinMode === "setup" ? "Set PIN" : "Unlock App"}
+          {pinError && (
+            <div style={{ color: "var(--ct-red)", fontSize: 13, marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              ⚠ {pinError}
+            </div>
+          )}
+          <button style={{ ...css.btnAccent, width: "100%", marginTop: 16, fontSize: 15, padding: "14px" }} onClick={handlePinSubmit}>
+            <Lock size={18} /> {pinMode === "setup" ? "Set PIN & Unlock" : "Unlock App"}
           </button>
+          {pinMode === "setup" && (
+            <button
+              style={{ background: "none", border: "none", color: "var(--ct-muted)", fontSize: 13, marginTop: 12, cursor: "pointer", textDecoration: "underline" }}
+              onClick={handleSkipPin}
+            >
+              Skip — don't use a PIN
+            </button>
+          )}
+          {pinMode === "verify" && (
+            <button
+              style={{ background: "none", border: "none", color: "var(--ct-muted)", fontSize: 12, marginTop: 12, cursor: "pointer" }}
+              onClick={() => {
+                // Forgot PIN — remove it and require Firebase re-login
+                localStorage.removeItem("crimetrack_pin");
+                localStorage.removeItem("crimetrack_auth_profile");
+                setPinMode("none");
+                setCurrentUser(null);
+                setProfile(null);
+                pendingUserRef.current = null;
+                pendingProfileRef.current = null;
+              }}
+            >
+              Forgot PIN? Reset (requires login again)
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -3084,17 +3533,7 @@ export default function App() {
     <div {...shellBg}>
       <div className="ct-ambient" aria-hidden />
       <div className="ct-scrim" aria-hidden />
-      <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div className="ct-glass" style={{ ...css.card, textAlign: "center", maxWidth: 360, width: "100%" }}>
-          <Shield size={56} color={timeTheme.accentColor} />
-          <div className="ct-title" style={{ fontSize: 20, fontWeight: 800, marginTop: 12 }}>CrimeTrack</div>
-          <div style={{ color: "var(--ct-text)", fontSize: 14, marginTop: 8 }}>App is locked for security.</div>
-          {authError && <div style={{ color: "var(--ct-red)", fontSize: 13, marginTop: 8 }}>{authError}</div>}
-          <button style={{ ...css.btnAccent, width: "100%", marginTop: 20 }} onClick={performBiometricAuth}>
-            <Lock size={18} /> Unlock App
-          </button>
-        </div>
-      </div>
+      <LoginView onLoginSuccess={handleLoginSuccess} onDemo={enterDemoMode} />
     </div>
   );
 
@@ -3106,22 +3545,26 @@ export default function App() {
           navigate={navigate}
           getAnalytics={getAnalytics}
           onExport={handleExportData}
+          onImportClick={() => isDemoMode ? showDemoRestriction("Restoring backups") : document.getElementById('import-file')?.click()}
           onImport={handleImportData}
           onExportExcel={handleExportExcel}
+          onImportExcelClick={() => isDemoMode ? showDemoRestriction("Importing Excel") : document.getElementById('import-excel')?.click()}
           onImportExcel={handleImportExcel}
           activeDataSource={activeDataSource}
           settings={settings}
           onLoadSource={handleLoadSource}
           sourceLoading={sourceLoading}
           onSelectSource={handleSelectSource}
+          isDemoMode={isDemoMode}
         />
       );
-      case "facesearch": return <FaceSearch records={records} navigate={navigate} goBack={goBack} modelsLoaded={modelsLoaded} />;
-      case "notifications": return <NotificationsView goBack={goBack} notifications={notifications} clearNotifications={clearNotifications} />;
+      case "facesearch": return <FaceSearch records={records} navigate={navigate} modelsLoaded={modelsLoaded} setModelsLoaded={setModelsLoaded} getHumanModel={getHumanModel} activeDataSource={activeDataSource} settings={settings} />;
+      case "notifications": return <NotificationsView notifications={notifications} clearNotifications={clearNotifications} />;
       case "list": return <AccusedList records={getFiltered()} allRecords={records} navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} filters={filters} setFilters={setFilters} showFilters={showFilters} setShowFilters={setShowFilters} />;
-      case "compare": return <CompareView records={records} goBack={goBack} />;
-      case "detail": return selectedRecord ? <AccusedDetail record={selectedRecord} records={records} navigate={navigate} onDelete={id => setDeleteConfirm(id)} onSharePDF={generateAndSharePDF} onQuickUpdate={quickUpdateRecord} /> : <div style={{ padding: 80, textAlign: "center", color: T.muted }}>Record not found</div>;
-      case "form": return <AccusedForm record={editingRecord} onSave={editingRecord ? updateRecord : addRecord} goBack={goBack} activeDataSource={activeDataSource} settings={settings} />;
+      case "compare": return <CompareView records={records} />;
+      case "detail": return selectedRecord ? <AccusedDetail record={selectedRecord} records={records} navigate={navigate} onDelete={id => isDemoMode ? showDemoRestriction("Deleting records") : setDeleteConfirm(id)} onSharePDF={generateAndSharePDF} onQuickUpdate={quickUpdateRecord} isDemoMode={isDemoMode} /> : <div style={{ padding: 80, textAlign: "center", color: T.muted }}>Record not found</div>;
+      case "form": return <AccusedForm record={editingRecord} onSave={editingRecord ? updateRecord : addRecord} goBack={goBack} activeDataSource={activeDataSource} settings={settings} getHumanModel={getHumanModel} />;
+      case "databasegrid": return <DatabaseGridView records={records} onUpdateDatabase={updateEntireDatabase} />;
       case "grid":
       case "livegrid": return (
         <ExcelSpreadsheet
@@ -3141,7 +3584,25 @@ export default function App() {
       case "analytics": return <Analytics getAnalytics={getAnalytics} records={records} />;
       case "advanced-analytics": return <AdvancedAnalyticsDashboard records={records} theme={timeTheme} css={css} />;
       case "docs": return <DocsView />;
-      case "sheets": return <GoogleSheetsView sheetsData={records} isLoading={false} lastSyncTime={Date.now()} onRefresh={async () => { const r = await loadRecordsForSource(activeDataSource, settings); if (r) setRecords(r); }} toastShow={toast_show} />;
+      case "sheets": return <GoogleSheetsView sheetsData={records} isLoading={false} lastSyncTime={null} onRefresh={async () => { const r = await loadRecordsForSource("google", settings); if (r) setRecords(r); }} toastShow={toast_show} />;
+      case "operations": return isDemoMode ? <DemoProfileView onExitDemo={exitDemoMode} /> : <OperationsRoom currentUser={currentUser} profile={profile} records={records} getHumanModel={getHumanModel} onAddRecord={addRecord} onDeleteRecord={(id) => setDeleteConfirm(id)} />;
+      case "profile": return (
+        isDemoMode ? <DemoProfileView onExitDemo={exitDemoMode} /> : <ProfileView
+          currentUser={currentUser}
+          onLogout={() => { setIsAuthenticated(false); setCurrentUser(null); setProfile(null); localStorage.removeItem("crimetrack_auth_profile"); }}
+          SettingsComponent={
+            <SettingsView
+              settings={settings}
+              saveSettings={saveSettings}
+              timeTheme={timeTheme}
+              toastShow={toast_show}
+              onSelectSource={handleSelectSource}
+              navigate={navigate}
+              onMigrateData={handleMigrateData}
+            />
+          }
+        />
+      );
       case "settings": return (
         <SettingsView
           settings={settings}
@@ -3174,29 +3635,71 @@ export default function App() {
         transition: "background-color 0.8s ease, background-image 0.8s ease",
       }}
     >
+      {globalNotification && (
+        <div style={{
+          position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)",
+          background: "rgba(30, 41, 59, 0.85)", color: "#fff", padding: "12px 20px", borderRadius: 30,
+          fontSize: 14, fontWeight: 600, zIndex: 9999, border: `1px solid rgba(255,255,255,0.1)`,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)", backdropFilter: "blur(16px)",
+          display: "flex", alignItems: "center", gap: 12,
+          animation: "fadeSlideDown 0.3s ease-out"
+        }}>
+          <style>{`
+            @keyframes fadeSlideDown {
+              0% { opacity: 0; transform: translate(-50%, -20px); }
+              100% { opacity: 1; transform: translate(-50%, 0); }
+            }
+          `}</style>
+          {globalNotification.officerPhoto ? (
+            <img src={globalNotification.officerPhoto} alt="Officer" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
+          ) : (
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}><User size={16} color="#fff" /></div>
+          )}
+          <div>
+            <span style={{ color: "#38bdf8" }}>Officer {globalNotification.officerName}</span> {globalNotification.actionType} <b>{globalNotification.recordName}</b>
+          </div>
+        </div>
+      )}
       <div className="ct-ambient" aria-hidden />
       <div className="ct-scrim" aria-hidden />
-      <div className="ct-content" style={{ ...css.page, paddingBottom: (view === "grid" || view === "livegrid" || view === "docs") ? 0 : 80, height: view === "docs" ? "100vh" : "auto", overflow: view === "docs" ? "hidden" : "visible" }}>
+      <div className="ct-content" style={{ ...css.page, paddingBottom: 80, height: "auto", overflow: "visible" }}>
         <Header view={view} goBack={goBack} navStack={navStack} title={headerTitle} timeTheme={timeTheme} isOnline={isOnline} navigate={navigate} />
-        {renderView()}
-        <BottomNav view={view} navTo={navTo} navigate={navigate} onImportExcel={handleImportExcel} isGoogleSheetsAuthenticated={isGoogleSheetsConfigured(settings)} />
-      {toast && <Toast msg={toast.msg} type={toast.type} />}
-      {deleteConfirm && <ConfirmDialog msg="Delete this record permanently? This cannot be undone." onConfirm={() => deleteRecord(deleteConfirm)} onCancel={() => setDeleteConfirm(null)} />}
-      <GoogleSheetsSync
-        isOpen={showGoogleSync}
-        onClose={() => setShowGoogleSync(false)}
-        isAuthenticated={isGoogleSheetsConfigured(settings)}
-        authEmail={isAppsScriptConfigured(settings) ? "Apps Script (no Cloud API)" : settings.googleSheetLink ? "Google Sheet linked" : "Not configured"}
-        sheetsId={settings.googleSheetLink || sheetLinkFromSettings(settings)}
-        recordCount={records.length}
-        onSync={async () => { setIsSyncing(true); await new Promise(r => setTimeout(r, 2000)); setIsSyncing(false); toast_show('Synced successfully!'); }}
-        onAuthClick={() => toast_show('Google Auth setup in Settings', 'warning')}
-        onDisconnect={() => { saveSettings({ ...settings, enableGoogleSync: false }); toast_show('Disconnected'); }}
-        isSyncing={isSyncing}
-        syncMode={syncMode}
-        setSyncMode={setSyncMode}
-        toastShow={toast_show}
-      />
+        <Suspense fallback={<ModuleLoader />}>
+          {renderView()}
+        </Suspense>
+        <BottomNav view={view} navTo={navTo} navigate={navigate} isGoogleSheetsAuthenticated={!isDemoMode && isGoogleSheetsConfigured(settings)} isDemoMode={isDemoMode} onRestrictedAction={showDemoRestriction} />
+        {toast && <Toast msg={toast.msg} type={toast.type} />}
+        {deleteConfirm && <ConfirmDialog msg="Delete this record permanently? This cannot be undone." onConfirm={() => deleteRecord(deleteConfirm)} onCancel={() => setDeleteConfirm(null)} />}
+        {showGoogleSync && (
+          <Suspense fallback={null}>
+            <GoogleSheetsSync
+              isOpen={showGoogleSync}
+              onClose={() => setShowGoogleSync(false)}
+              isAuthenticated={isGoogleSheetsConfigured(settings)}
+              authEmail={isAppsScriptConfigured(settings) ? "Apps Script (no Cloud API)" : settings.googleSheetLink ? "Google Sheet linked" : "Not configured"}
+              sheetsId={settings.googleSheetLink || sheetLinkFromSettings(settings)}
+              recordCount={records.length}
+              onSync={async () => {
+                if (!requireLiveSession("Google Sheets sync")) return;
+                setIsSyncing(true);
+                try {
+                  await saveRecordsForSource("google", settings, records);
+                  toast_show('Synced successfully!');
+                } catch (err) {
+                  toast_show(err.message || "Sync failed", "danger");
+                } finally {
+                  setIsSyncing(false);
+                }
+              }}
+              onAuthClick={() => toast_show('Google Auth setup in Settings', 'warning')}
+              onDisconnect={() => { saveSettings({ ...settings, enableGoogleSync: false }); toast_show('Disconnected'); }}
+              isSyncing={isSyncing}
+              syncMode={syncMode}
+              setSyncMode={setSyncMode}
+              toastShow={toast_show}
+            />
+          </Suspense>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Shield, TrendingUp, Clock, User, Eye } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Shield } from 'lucide-react';
 
 export function SecurityAuditDashboard({ theme, css }) {
   const [auditLogs, setAuditLogs] = useState([]);

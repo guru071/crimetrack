@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import {
   Cloud, RefreshCw, CheckCircle, AlertTriangle, Loader, ChevronDown, ChevronUp, Download
 } from "lucide-react";
@@ -139,6 +139,30 @@ const css = {
     transition: "width 0.3s ease",
   },
 };
+
+const DETAIL_FIELDS = [
+  ["fatherName", "Father's Name"],
+  ["address", "Address"],
+  ["age", "Age"],
+  ["sex", "Sex"],
+  ["communityReligion", "Community & Religion"],
+  ["familyMembers", "Family Members"],
+  ["propertiesDetails", "Properties Details"],
+  ["policeStation", "Police Station / Jurisdiction"],
+  ["hsNo", "H.S No."],
+  ["firNumber", "FIR Number"],
+  ["firDate", "FIR Date"],
+  ["sessionNumber", "Session Number"],
+  ["casesPending", "Cases Pending"],
+  ["currentDoings", "Current Doings"],
+  ["status", "Status"],
+  ["caseYear", "Case Year"],
+  ["hideouts", "Hideouts"],
+  ["areaOfOperation", "Area of Operation"],
+  ["gangLeader", "Name of Gang Leader"],
+  ["associates", "Name of Associates"],
+  ["notes", "Additional Notes"],
+];
 
 export default function GoogleSheetsView({ sheetsData, isLoading, lastSyncTime, onRefresh, onImportSelected, toastShow }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -311,7 +335,7 @@ export default function GoogleSheetsView({ sheetsData, isLoading, lastSyncTime, 
                 </tr>
               </thead>
               <tbody>
-                {sheetsData.map((record, idx) => (
+                {sheetsData.map((record) => (
                   <React.Fragment key={record.id}>
                     <tr style={css.row}>
                       <td style={css.td}>
@@ -322,7 +346,7 @@ export default function GoogleSheetsView({ sheetsData, isLoading, lastSyncTime, 
                           onChange={() => handleSelectRow(record.id)}
                         />
                       </td>
-                      <td style={css.td} onClick={() => toggleRowExpand(record.id)} style={{ cursor: "pointer", ...css.td }}>
+                      <td style={{ cursor: "pointer", ...css.td }} onClick={() => toggleRowExpand(record.id)}>
                         <strong>{record.name || "—"}</strong>
                       </td>
                       <td style={css.td}>
@@ -349,43 +373,18 @@ export default function GoogleSheetsView({ sheetsData, isLoading, lastSyncTime, 
                     {expandedRows.has(record.id) && (
                       <tr style={{ background: T.card2 + "55", borderBottom: `1px solid ${T.border}` }}>
                         <td colSpan="6" style={{ ...css.td, padding: 12 }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 11 }}>
-                            {record.fatherName && (
-                              <div>
-                                <div style={{ color: T.muted, textTransform: "uppercase", fontSize: 10 }}>Father's Name</div>
-                                <div style={{ color: T.text, marginTop: 2 }}>{record.fatherName}</div>
-                              </div>
-                            )}
-                            {record.age && (
-                              <div>
-                                <div style={{ color: T.muted, textTransform: "uppercase", fontSize: 10 }}>Age</div>
-                                <div style={{ color: T.text, marginTop: 2 }}>{record.age}</div>
-                              </div>
-                            )}
-                            {record.sex && (
-                              <div>
-                                <div style={{ color: T.muted, textTransform: "uppercase", fontSize: 10 }}>Sex</div>
-                                <div style={{ color: T.text, marginTop: 2 }}>{record.sex}</div>
-                              </div>
-                            )}
-                            {record.areaOfOperation && (
-                              <div>
-                                <div style={{ color: T.muted, textTransform: "uppercase", fontSize: 10 }}>Area of Operation</div>
-                                <div style={{ color: T.text, marginTop: 2 }}>{record.areaOfOperation}</div>
-                              </div>
-                            )}
-                            {record.casesPending && (
-                              <div style={{ gridColumn: "1 / -1" }}>
-                                <div style={{ color: T.muted, textTransform: "uppercase", fontSize: 10 }}>Cases Pending</div>
-                                <div style={{ color: T.text, marginTop: 2 }}>{record.casesPending}</div>
-                              </div>
-                            )}
-                            {record.notes && (
-                              <div style={{ gridColumn: "1 / -1" }}>
-                                <div style={{ color: T.muted, textTransform: "uppercase", fontSize: 10 }}>Notes</div>
-                                <div style={{ color: T.text, marginTop: 2 }}>{record.notes}</div>
-                              </div>
-                            )}
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, fontSize: 11 }}>
+                            {DETAIL_FIELDS.map(([key, label]) => {
+                              const value = record[key];
+                              if (!value) return null;
+                              const wide = ["address", "familyMembers", "propertiesDetails", "casesPending", "currentDoings", "hideouts", "associates", "notes"].includes(key);
+                              return (
+                                <div key={key} style={wide ? { gridColumn: "1 / -1" } : undefined}>
+                                  <div style={{ color: T.muted, textTransform: "uppercase", fontSize: 10 }}>{label}</div>
+                                  <div style={{ color: T.text, marginTop: 2, whiteSpace: "pre-wrap" }}>{String(value)}</div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </td>
                       </tr>

@@ -1,17 +1,18 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Save, PlusCircle, Camera, RefreshCw, Copy, ClipboardPaste, Scissors,
-  Trash2, ArrowDown, ArrowUp, SortAsc, SortDesc, Search, CopyPlus,
-  AlertTriangle, Download, Upload, Undo2, Redo2, Filter, ArrowLeft, Mic
+  Trash2, ArrowDown, ArrowUp, SortAsc, Search, CopyPlus,
+  AlertTriangle, Download, Upload, Undo2, Redo2, Filter, ArrowLeft, Mic, User, X
 } from "lucide-react";
 import "./excel-spreadsheet.css";
 import { GRID_COLUMN_KEYS, SOURCE_UI } from "./dataSources";
-import { compressImage } from "./AdvancedUtils";
 import {
   colToLetter, cellAddress, DUPLICATE_KEYS, getDuplicateRowIndices,
   removeDuplicates, rowsToTsv, parseTsvPaste,
 } from "./excelGridUtils";
 import PhotoUploaderModal from "./PhotoUploaderModal";
+import { Capacitor } from "@capacitor/core";
+import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 
 const LABELS = {
   photo: "Photo", id: "ID", name: "Name", fatherName: "Father", address: "Address",
@@ -23,6 +24,25 @@ const LABELS = {
 };
 
 const MAX_UNDO = 40;
+
+async function ensureNativeSpeechReady() {
+  const availability = await SpeechRecognition.available();
+  if (!availability?.available) {
+    throw new Error("Speech recognition is not available on this device.");
+  }
+
+  let permission = await SpeechRecognition.checkPermissions();
+  if (permission.speechRecognition !== "granted") {
+    permission = await SpeechRecognition.requestPermissions();
+  }
+  if (permission.speechRecognition !== "granted") {
+    throw new Error("Microphone permission was not granted.");
+  }
+}
+
+function getWebSpeechRecognition() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition;
+}
 
 export default function ExcelSpreadsheet({
   records,
@@ -37,7 +57,6 @@ export default function ExcelSpreadsheet({
   toastShow,
   goBack,
 }) {
-  const fileRefs = useRef({});
   const gridKeys = useMemo(
     () => GRID_COLUMN_KEYS.filter((k) => k === "photo" || fields.some((f) => f.key === k)),
     [fields]
@@ -65,8 +84,35 @@ export default function ExcelSpreadsheet({
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [photoModalState, setPhotoModalState] = useState(null);
+  const [imageViewerState, setImageViewerState] = useState(null);
   const [isListening, setIsListening] = useState(false);
+  const [colWidths, setColWidths] = useState({});
+  const resizingRef = useRef(null);
   const recognitionRef = useRef(null);
+  const [panelHeight, setPanelHeight] = useState(null);
+  const panelResizingRef = useRef(null);
+
+  // Panel (window) vertical resize
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!panelResizingRef.current) return;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const delta = clientY - panelResizingRef.current.startY;
+      const newH = Math.max(200, panelResizingRef.current.startH + delta);
+      setPanelHeight(newH);
+    };
+    const onUp = () => { panelResizingRef.current = null; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    };
+  }, []);
 
   const activeRef = useRef(active);
   useEffect(() => { activeRef.current = active; }, [active]);
@@ -75,9 +121,11 @@ export default function ExcelSpreadsheet({
     const list = records.length ? records.map((r) => ({ ...r })) : [];
     const targetSize = Math.max(list.length + 15, 20);
     while (list.length < targetSize) list.push(createEmpty());
-    setRows(list);
-    setUndoStack([]);
-    setRedoStack([]);
+    queueMicrotask(() => {
+      setRows(list);
+      setUndoStack([]);
+      setRedoStack([]);
+    });
   }, [records]);
 
   const pushHistory = useCallback((prev) => {
@@ -154,32 +202,32 @@ export default function ExcelSpreadsheet({
     });
   };
 
-  const toggleMic = () => {
+  const toggleMic = async () => {
     if (isListening) {
-      recognitionRef.current?.stop();
+      if (Capacitor.isNativePlatform()) {
+        await SpeechRecognition.stop();
+      } else {
+        recognitionRef.current?.stop();
+      }
       setIsListening(false);
       return;
     }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      toastShow?.("Speech recognition not supported in this browser.", "danger");
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    
-    recognition.onresult = (event) => {
-      let finalTranscript = "";
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        }
-      }
-      if (finalTranscript) {
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await ensureNativeSpeechReady();
+        setIsListening(true);
+        const result = await SpeechRecognition.start({
+          language: "en-US",
+          maxResults: 2,
+          prompt: "Say something",
+          partialResults: false,
+          popup: true,
+        });
+        const finalTranscript = result?.matches?.[0] || "";
         const curActive = activeRef.current;
         const curActiveKey = gridKeys[curActive.col];
-        if (curActive.row >= 0 && curActiveKey && curActiveKey !== "photo") {
+        if (finalTranscript.trim() && curActive.row >= 0 && curActiveKey && curActiveKey !== "photo") {
           setRowsHist((prev) => {
             const next = [...prev];
             const currentVal = next[curActive.row][curActiveKey] || "";
@@ -188,17 +236,70 @@ export default function ExcelSpreadsheet({
             return next;
           });
         }
+      } catch (err) {
+        toastShow?.(err.message || "Mic permission denied or speech recognition error.", "danger");
+      } finally {
+        setIsListening(false);
+      }
+      return;
+    }
+
+    const SR = getWebSpeechRecognition();
+    if (!SR) {
+      toastShow?.("Speech recognition is not supported in this desktop runtime. Use the APK for native dictation.", "warning");
+      return;
+    }
+    const recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    // Track what was already committed so we only append new finals
+    let committedText = "";
+
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+      let finalTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += t;
+        } else {
+          interimTranscript += t;
+        }
+      }
+
+      const curActive = activeRef.current;
+      const curActiveKey = gridKeys[curActive.col];
+      if (curActive.row >= 0 && curActiveKey && curActiveKey !== "photo") {
+        setRowsHist((prev) => {
+          const next = [...prev];
+          const baseVal = committedText;
+          // Show interim text live in cell
+          const displayVal = baseVal + (interimTranscript || finalTranscript);
+          next[curActive.row] = { ...next[curActive.row], [curActiveKey]: displayVal, isNew: false, updatedAt: new Date().toISOString() };
+          return next;
+        });
+        if (finalTranscript) {
+          committedText = committedText + finalTranscript;
+        }
       }
     };
-    
-    recognition.onerror = () => setIsListening(false);
+
+    recognition.onerror = (e) => {
+      if (e.error === 'network') {
+        alert("Network error: Your browser's speech recognition engine cannot connect to the cloud. Try Chrome or build the Android APK to use native speech.");
+      }
+      setIsListening(false);
+    };
     recognition.onend = () => setIsListening(false);
 
     recognitionRef.current = recognition;
     try {
       recognition.start();
       setIsListening(true);
-    } catch(e) {
+    } catch {
       setIsListening(false);
     }
   };
@@ -206,20 +307,6 @@ export default function ExcelSpreadsheet({
   const setFormulaBar = (val) => {
     if (activeKey == null || active.row < 0) return;
     handleChange(active.row, activeKey, val);
-  };
-
-  const handlePhoto = async (rowIndex, file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const compressed = await compressImage(reader.result, 0.65);
-        handleChange(rowIndex, "photo", compressed);
-      } catch {
-        handleChange(rowIndex, "photo", reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
   const insertRow = (afterIndex = rows.length - 1) => {
@@ -304,6 +391,12 @@ export default function ExcelSpreadsheet({
     });
   };
 
+  const selectAllRows = () => {
+    const visibleIndices = displayList.map(({ index }) => index);
+    const allVisibleSelected = visibleIndices.length > 0 && visibleIndices.every((index) => selectedRows.has(index));
+    setSelectedRows(allVisibleSelected ? new Set() : new Set(visibleIndices));
+  };
+
   const sortByColumn = (key) => {
     if (sortCol === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -318,6 +411,30 @@ export default function ExcelSpreadsheet({
     pushHistory(rows);
     setRows(cleaned);
     toastShow?.(`Removed ${before - cleaned.length} duplicate row(s) (kept ${keep})`);
+  };
+
+  const handleResizeStart = (e, colKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = colWidths[colKey] || 90;
+    resizingRef.current = { colKey, startX, startWidth };
+
+    const onMouseMove = (moveEvent) => {
+      if (!resizingRef.current) return;
+      const diff = moveEvent.clientX - resizingRef.current.startX;
+      const newWidth = Math.max(40, resizingRef.current.startWidth + diff);
+      setColWidths(prev => ({ ...prev, [resizingRef.current.colKey]: newWidth }));
+    };
+
+    const onMouseUp = () => {
+      resizingRef.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
   };
 
   const saveAll = () => {
@@ -365,76 +482,51 @@ export default function ExcelSpreadsheet({
   });
 
   return (
-    <div className="excel-app">
+    <div
+      className="excel-app"
+      style={panelHeight ? { height: panelHeight, minHeight: 200 } : {}}
+    >
       <div style={{ padding: "8px 14px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 800, color: "var(--ct-text)" }}>Excel Workbook</div>
-          <div style={{ fontSize: 11, color: ui.color, fontWeight: 600 }}>{ui.label} · {rows.length} rows</div>
+          <div style={{ fontSize: 11, color: ui.color, fontWeight: 600 }}>{ui.label} • {rows.length} rows</div>
         </div>
-        <button type="button" className="excel-tool-btn" onClick={onRefresh}>
-          <RefreshCw size={14} /> Reload
-        </button>
       </div>
 
-      {/* Ribbon */}
-      <div className="excel-ribbon" style={{ marginTop: 8 }}>
-        <div className="excel-ribbon-group">
+      {/* Top Bar (Google Sheets Style) */}
+      <div className="excel-top-bar">
+        <div className="excel-top-bar-left">
           {goBack && (
-            <button type="button" className="excel-tool-btn" onClick={goBack} title="Back to Dashboard">
-              <ArrowLeft size={14} /> Back
+            <button type="button" className="excel-top-btn" onClick={goBack} title="Back">
+              <ArrowLeft size={18} />
             </button>
           )}
-        </div>
-        <div className="excel-ribbon-group">
-          <span className="excel-ribbon-label">Clipboard</span>
-          <button type="button" className="excel-tool-btn" onClick={copySelection} title="Ctrl+C"><Copy size={14} /> Copy</button>
-          <button type="button" className="excel-tool-btn" onClick={pasteClipboard} title="Ctrl+V"><ClipboardPaste size={14} /> Paste</button>
-          <button type="button" className="excel-tool-btn" onClick={cutSelection}><Scissors size={14} /> Cut</button>
-          <button type="button" className="excel-tool-btn" onClick={undo} disabled={!undoStack.length}><Undo2 size={14} /> Undo</button>
-          <button type="button" className="excel-tool-btn" onClick={redo} disabled={!redoStack.length}><Redo2 size={14} /> Redo</button>
-        </div>
-        <div className="excel-ribbon-group">
-          <span className="excel-ribbon-label">Rows</span>
-          <button type="button" className="excel-tool-btn" onClick={() => insertRow(active.row)}><ArrowDown size={14} /> Insert below</button>
-          <button type="button" className="excel-tool-btn" onClick={() => insertRow(rows.length - 1)}><PlusCircle size={14} /> Insert at end</button>
-          <button type="button" className="excel-tool-btn" onClick={() => insertRow(-1)}><ArrowUp size={14} /> Insert at top</button>
-          <button type="button" className="excel-tool-btn" onClick={duplicateSelectedRows}><CopyPlus size={14} /> Duplicate row</button>
-          <button type="button" className="excel-tool-btn danger" onClick={deleteSelectedRows}><Trash2 size={14} /> Delete</button>
-        </div>
-        <div className="excel-ribbon-group">
-          <span className="excel-ribbon-label">Sort & filter</span>
-          <button type="button" className="excel-tool-btn" onClick={() => sortCol && sortByColumn(sortCol)}><SortAsc size={14} /> Sort</button>
-          <button type="button" className="excel-tool-btn" onClick={() => setFilterText("")}><Filter size={14} /> Clear filter</button>
-        </div>
-        <div className="excel-ribbon-group">
-          <span className="excel-ribbon-label">Duplicates</span>
-          <select
-            className="excel-tool-btn"
-            value={dupKey}
-            onChange={(e) => setDupKey(e.target.value)}
-            style={{ padding: "6px 8px" }}
-          >
-            {DUPLICATE_KEYS.map((d) => (
-              <option key={d.id} value={d.id}>{d.label}</option>
-            ))}
-          </select>
-          <button type="button" className="excel-tool-btn danger" onClick={() => removeDupes("first")}>Remove dupes (keep first)</button>
-          <button type="button" className="excel-tool-btn danger" onClick={() => removeDupes("last")}>Keep last</button>
-          <button type="button" className="excel-tool-btn" onClick={() => setShowDupOnly((v) => !v)}>
-            {showDupOnly ? "Show all" : "Show duplicates only"}
+          <button type="button" className="excel-top-btn" onClick={undo} disabled={!undoStack.length} title="Undo">
+            <Undo2 size={18} />
+          </button>
+          <button type="button" className="excel-top-btn" onClick={redo} disabled={!redoStack.length} title="Redo">
+            <Redo2 size={18} />
           </button>
         </div>
-        <div className="excel-ribbon-group">
-          <span className="excel-ribbon-label">File</span>
-          {onExportExcel && <button type="button" className="excel-tool-btn" onClick={onExportExcel}><Download size={14} /> Export .xlsx</button>}
+        <div className="excel-top-bar-right">
+          {onExportExcel && (
+            <button type="button" className="excel-top-btn" onClick={onExportExcel} title="Export">
+              <Download size={18} />
+            </button>
+          )}
           {onImportExcel && (
             <>
-              <button type="button" className="excel-tool-btn" onClick={() => document.getElementById("excel-grid-import")?.click()}><Upload size={14} /> Import</button>
+              <button type="button" className="excel-top-btn" onClick={() => document.getElementById("excel-grid-import")?.click()} title="Import .xlsx">
+                <Upload size={18} />
+              </button>
               <input id="excel-grid-import" type="file" accept=".xlsx" style={{ display: "none" }} onChange={onImportExcel} />
             </>
           )}
-          <button type="button" className="excel-tool-btn primary" onClick={saveAll} disabled={isSaving}>
-            <Save size={14} /> {isSaving ? "Saving…" : "Save"}
+          <button type="button" className="excel-top-btn" onClick={onRefresh} title="Reload">
+            <RefreshCw size={18} />
+          </button>
+          <button type="button" className="excel-top-btn primary-save" onClick={saveAll} disabled={isSaving}>
+            <Save size={16} style={{ marginRight: 4 }} /> {isSaving ? "..." : "Save"}
           </button>
         </div>
       </div>
@@ -442,24 +534,28 @@ export default function ExcelSpreadsheet({
       {/* Formula bar */}
       <div className="excel-formula-bar">
         <span className="excel-cell-ref">{cellAddress(active.row, active.col)}</span>
-        <button 
-          type="button" 
-          className="excel-tool-btn" 
+        <button
+          type="button"
+          className="excel-tool-btn"
           onClick={toggleMic}
-          style={{ padding: "0 4px", color: isListening ? "#ef4444" : "var(--ct-muted)" }}
-          title="Dictate text into cell"
+          style={{ padding: "0 4px", color: isListening ? "#ef4444" : "var(--ct-muted)", border: "none", background: "transparent" }}
+          title="Dictate"
         >
-          <Mic size={14} style={{ animation: isListening ? "pulse 1.5s infinite" : "none" }} />
+          <Mic size={16} style={{ animation: isListening ? "pulse 1.5s infinite" : "none" }} />
         </button>
-        <span style={{ color: "var(--ct-muted)", fontSize: 11 }}>fx</span>
+        <span style={{ color: "var(--ct-muted)", fontSize: 13, fontWeight: 700, margin: "0 4px" }}>fx</span>
         <input
           className="excel-formula-input"
           value={activeKey === "photo" ? (formulaValue ? "(image)" : "") : formulaValue}
           disabled={activeKey === "photo"}
           onChange={(e) => setFormulaBar(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+          placeholder="Enter text or formula"
         />
       </div>
+
+      {/* Grid */}
+
 
       <div style={{ margin: "0 10px", display: "flex", gap: 8, alignItems: "center" }}>
         <Search size={14} color="var(--ct-muted)" />
@@ -480,20 +576,41 @@ export default function ExcelSpreadsheet({
 
       <div className="excel-sheet-wrap">
         <table className="excel-sheet">
+          <colgroup>
+            <col style={{ width: 36, minWidth: 36 }} />
+            <col style={{ width: 36, minWidth: 36 }} />
+            {gridKeys.map(k => <col key={k} style={{ width: colWidths[k] || 90, minWidth: colWidths[k] || 90 }} />)}
+          </colgroup>
           <thead>
             <tr>
               <th className="excel-corner" />
-              <th className="excel-row-head" title="Select row">☑</th>
+              <th className="excel-row-head" title="Select visible rows">
+                <input
+                  type="checkbox"
+                  checked={displayList.length > 0 && displayList.every(({ index }) => selectedRows.has(index))}
+                  onChange={selectAllRows}
+                  style={{ width: 14, height: 14, cursor: "pointer" }}
+                />
+              </th>
               {gridKeys.map((k, ci) => (
                 <th
                   key={k}
                   className={`excel-col-head ${sortCol === k ? "sorted" : ""}`}
-                  onClick={() => sortByColumn(k)}
-                  title="Click to sort"
+                  style={{ position: "relative" }}
                 >
-                  <div>{colToLetter(ci)}</div>
-                  <div style={{ fontSize: 10, opacity: 0.85 }}>{LABELS[k] || k}</div>
-                  {sortCol === k && (sortDir === "asc" ? " ▲" : " ▼")}
+                  <div onClick={() => sortByColumn(k)} style={{ cursor: "pointer", width: "100%", padding: "6px 4px" }} title="Click to sort">
+                    <div>{colToLetter(ci)}</div>
+                    <div style={{ fontSize: 10, opacity: 0.85 }}>{LABELS[k] || k}</div>
+                    {sortCol === k && (sortDir === "asc" ? " ▴" : " ▾")}
+                  </div>
+                  <div
+                    onMouseDown={(e) => handleResizeStart(e, k)}
+                    onTouchStart={(e) => handleResizeStart({ ...e, clientX: e.touches[0].clientX, preventDefault: ()=>e.preventDefault(), stopPropagation: ()=>e.stopPropagation() }, k)}
+                    style={{
+                      position: "absolute", right: 0, top: 0, bottom: 0, width: 8,
+                      cursor: "col-resize", zIndex: 10, background: "transparent"
+                    }}
+                  />
                 </th>
               ))}
             </tr>
@@ -522,11 +639,17 @@ export default function ExcelSpreadsheet({
                       onKeyDown={(e) => onKeyDown(e, rowIndex, colIndex)}
                     >
                       {k === "photo" ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: 4, minHeight: 52 }}>
+                        <div style={{ display: "flex", gap: 4 }}>
                           {row.photo ? (
-                            <img src={row.photo} alt="" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 4 }} />
+                            <img
+                              src={row.photo}
+                              style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4, cursor: "pointer" }}
+                              onClick={(e) => { e.stopPropagation(); setImageViewerState(row.photo); }}
+                            />
                           ) : (
-                            <span style={{ fontSize: 10, color: "#94a3b8", width: 44, textAlign: "center" }}>—</span>
+                            <div style={{ width: 24, height: 24, background: "var(--ct-card2)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 4 }}>
+                              <User size={14} color="var(--ct-muted)" />
+                            </div>
                           )}
                           <button
                             type="button"
@@ -582,18 +705,86 @@ export default function ExcelSpreadsheet({
         <span>Source: <strong style={{ color: ui.color }}>{ui.label}</strong></span>
       </div>
 
+      {/* Bottom Bar (Google Sheets Style - Mobile tools) */}
+      <div className="excel-bottom-bar">
+        <button type="button" className="excel-tool-btn" onClick={copySelection} title="Ctrl+C"><Copy size={14} /> Copy</button>
+        <button type="button" className="excel-tool-btn" onClick={pasteClipboard} title="Ctrl+V"><ClipboardPaste size={14} /> Paste</button>
+        <button type="button" className="excel-tool-btn" onClick={cutSelection}><Scissors size={14} /> Cut</button>
+        <div className="excel-divider" />
+        <button type="button" className="excel-tool-btn" onClick={() => insertRow(active.row)}><ArrowDown size={14} /> Row Below</button>
+        <button type="button" className="excel-tool-btn" onClick={() => insertRow(rows.length - 1)}><PlusCircle size={14} /> Row End</button>
+        <button type="button" className="excel-tool-btn" onClick={() => insertRow(-1)}><ArrowUp size={14} /> Row Top</button>
+        <button type="button" className="excel-tool-btn danger" onClick={deleteSelectedRows}><Trash2 size={14} /> Delete</button>
+        <div className="excel-divider" />
+        <button type="button" className="excel-tool-btn" onClick={() => sortCol && sortByColumn(sortCol)}><SortAsc size={14} /> Sort</button>
+        <button type="button" className="excel-tool-btn" onClick={() => setFilterText("")}><Filter size={14} /> Filter</button>
+        <div className="excel-divider" />
+        <button type="button" className="excel-tool-btn" onClick={duplicateSelectedRows}><CopyPlus size={14} /> Duplicate</button>
+        <div className="excel-divider" />
+        <select
+          className="excel-tool-btn"
+          value={dupKey}
+          onChange={(e) => setDupKey(e.target.value)}
+          style={{ padding: "6px 8px" }}
+        >
+          {DUPLICATE_KEYS.map((d) => (
+            <option key={d.id} value={d.id}>{d.label}</option>
+          ))}
+        </select>
+        <button type="button" className="excel-tool-btn danger" onClick={() => removeDupes("first")}>Remove dupes</button>
+        <button type="button" className="excel-tool-btn" onClick={() => setShowDupOnly((v) => !v)}>
+          {showDupOnly ? "Show all" : "Show duplicates"}
+        </button>
+      </div>
+
       {photoModalState && (
         <PhotoUploaderModal
           initialMode={photoModalState.mode}
-          onPhotoCapture={(photo) => {
-            handleChange(photoModalState.rowIndex, "photo", photo);
+          onClose={() => setPhotoModalState(null)}
+          onPhotoCapture={(dataUrl) => {
+            handleChange(photoModalState.rowIndex, "photo", dataUrl);
             setPhotoModalState(null);
           }}
-          onClose={() => setPhotoModalState(null)}
           T={{ text: "#fff", accent: ui.color || "#3b82f6", card2: "#1e293b", red: "#ef4444" }}
           css={css}
         />
       )}
+
+      {imageViewerState && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.85)", zIndex: 10000,
+          display: "flex", alignItems: "center", justifyContent: "center"
+        }} onClick={() => setImageViewerState(null)}>
+          <button
+            style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "50%", padding: 8, cursor: "pointer", color: "#fff" }}
+            onClick={(e) => { e.stopPropagation(); setImageViewerState(null); }}
+          >
+            <X size={24} />
+          </button>
+          <img src={imageViewerState} style={{ maxWidth: "90%", maxHeight: "90%", objectFit: "contain", borderRadius: 8, boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }} onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+      {/* Panel Resize Handle */}
+      <div
+        title="Drag to resize panel"
+        onMouseDown={(e) => {
+          const el = e.currentTarget.parentElement;
+          panelResizingRef.current = { startY: e.clientY, startH: el.getBoundingClientRect().height };
+          e.preventDefault();
+        }}
+        onTouchStart={(e) => {
+          const el = e.currentTarget.parentElement;
+          panelResizingRef.current = { startY: e.touches[0].clientY, startH: el.getBoundingClientRect().height };
+        }}
+        style={{
+          width: "100%", height: 10, cursor: "row-resize",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "transparent", flexShrink: 0, userSelect: "none"
+        }}
+      >
+        <div style={{ width: 40, height: 4, borderRadius: 2, background: "var(--ct-border, #444)", opacity: 0.6 }} />
+      </div>
     </div>
   );
 }

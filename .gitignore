@@ -26,8 +26,14 @@ dist-ssr
 # Backend configuration
 .env
 backend/token.json
+backend/service-account.json
 backend/.temp-uploads/
 .temp-uploads/
+temp-test-image.png
+latestAppJsx.txt
+revert.cjs
+revert_script_info.json
+cors.json
 
 
 # Electron Release

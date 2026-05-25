@@ -1,10 +1,21 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.police.crimetrack"
+    namespace = "tech.goatech.crimetrack"
     compileSdk = rootProject.ext.compileSdkVersion
+    
+    // 1. ADD SIGNING CONFIGURATION HERE
+    signingConfigs {
+        release {
+            storeFile file("my-release-key.keystore")
+            storePassword "@jacksparrow07" // <-- Replace with your password
+            keyAlias "my-key-alias"
+            keyPassword "@jacksparrow07" // <-- Replace with your password
+        }
+    }
+
     defaultConfig {
-        applicationId "com.police.crimetrack"
+        applicationId "tech.goatech.crimetrack"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -16,10 +27,13 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // 2. LINK THE SIGNING CONFIG TO THE RELEASE BUILD
+            signingConfig signingConfigs.release 
         }
     }
 }

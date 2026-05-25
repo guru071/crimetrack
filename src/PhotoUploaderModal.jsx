@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import ReactCrop from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
+import { X, RefreshCcw } from 'lucide-react';
 
 export default function PhotoUploaderModal({ initialMode, onPhotoCapture, onClose, humanInstance, T, css }) {
   const [cropSrc, setCropSrc] = useState(null);
   const [crop, setCrop] = useState({ unit: '%', x: 25, y: 25, width: 50, height: 50, aspect: 1 });
   const [completedCrop, setCompletedCrop] = useState(null);
   const [useCamera, setUseCamera] = useState(initialMode === 'camera');
+  const [facingMode, setFacingMode] = useState("environment");
   const imgRef = useRef(null);
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -18,12 +20,17 @@ export default function PhotoUploaderModal({ initialMode, onPhotoCapture, onClos
       // Small delay to ensure render
       setTimeout(() => fileInputRef.current?.click(), 100);
     }
+    // Opening behavior is intentionally keyed only to the requested initial mode.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMode]);
 
-  const startCamera = async () => {
+  const startCamera = async (mode = facingMode) => {
     setUseCamera(true);
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
@@ -32,6 +39,12 @@ export default function PhotoUploaderModal({ initialMode, onPhotoCapture, onClos
       alert("Camera access denied or unavailable.");
       onClose();
     }
+  };
+
+  const toggleCamera = () => {
+    const newMode = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(newMode);
+    startCamera(newMode);
   };
 
   const stopCamera = () => {
@@ -138,15 +151,49 @@ export default function PhotoUploaderModal({ initialMode, onPhotoCapture, onClos
       )}
 
       {useCamera && !cropSrc && (
-        <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyItems: "center", justifyContent: "center" }}>
-          <div style={{ color: "#fff", fontSize: 16, marginBottom: 20, fontWeight: 600 }}>Take Suspect Photo</div>
-          <video ref={videoRef} autoPlay playsInline style={{ width: "100%", maxHeight: "60vh", objectFit: "cover", border: `2px solid ${T.accent}` }} />
-          <div style={{ display: "flex", gap: 16, width: "100%", maxWidth: 300, marginTop: 30 }}>
-            <button style={{ ...css.btnAccent, flex: 2, padding: 16, fontSize: 16, background: "#4ade80", color: "#000" }} onClick={capturePhoto}>
-              📸 Capture
+        <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 9999, display: "flex", flexDirection: "column" }}>
+
+          {/* Top Bar */}
+          <div style={{ padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "absolute", top: 0, width: "100%", zIndex: 10, background: "linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)", boxSizing: "border-box" }}>
+            <button onClick={cancel} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", display: "flex" }}>
+              <X size={28} />
             </button>
-            <button style={{ ...css.btn, flex: 1, borderColor: T.red, color: T.red }} onClick={cancel}>
-              Cancel
+            <div style={{ color: "#fff", fontSize: 16, fontWeight: 600, letterSpacing: 1 }}>PHOTO</div>
+            <div style={{ width: 28 }} />
+          </div>
+
+          {/* Viewfinder */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            style={{ width: "100%", height: "100%", objectFit: "cover", transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
+          />
+
+          {/* Bottom Controls */}
+          <div style={{ position: "absolute", bottom: 0, width: "100%", padding: "40px 24px", display: "flex", justifyContent: "space-around", alignItems: "center", background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)", boxSizing: "border-box" }}>
+
+            <div style={{ width: 48 }} />
+
+            {/* Shutter Button */}
+            <button
+              onClick={capturePhoto}
+              style={{
+                width: 76, height: 76, borderRadius: 38,
+                background: "rgba(255,255,255,0.3)", border: "4px solid #fff",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 0 20px rgba(0,0,0,0.3)"
+              }}
+            >
+              <div style={{ width: 56, height: 56, borderRadius: 28, background: "#fff" }} />
+            </button>
+
+            {/* Flip Camera */}
+            <button
+              onClick={toggleCamera}
+              style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", cursor: "pointer", width: 48, height: 48, borderRadius: 24, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(10px)" }}
+            >
+              <RefreshCcw size={22} />
             </button>
           </div>
         </div>

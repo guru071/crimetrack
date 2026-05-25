@@ -171,14 +171,17 @@ export async function fetchLogsFromDatabase(settings) {
   const headers = { Accept: "application/json" };
   if (settings.apiSecret) headers["x-api-secret"] = settings.apiSecret;
 
-  try {
-    const res = await fetch(`${base}/api/logs`, { headers });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.logs || [];
-  } catch (e) {
-    return [];
+  for (const path of ["/api/logs", "/logs"]) {
+    try {
+      const res = await fetch(`${base}${path}`, { headers });
+      if (!res.ok) continue;
+      const data = await res.json();
+      return data.logs || data.data || [];
+    } catch {
+      // Try the next common logs endpoint.
+    }
   }
+  return [];
 }
 
 export async function pushToDatabase(settings, records) {
@@ -189,19 +192,31 @@ export async function pushToDatabase(settings, records) {
   const headers = { "Content-Type": "application/json", Accept: "application/json" };
   if (settings.apiSecret) headers["x-api-secret"] = settings.apiSecret;
 
-  const res = await fetch(`${base}/records`, {
-    method: "PUT",
-    headers,
-    body: JSON.stringify({ records: payloadRecords }),
-  });
-  if (!res.ok) {
-    const post = await fetch(`${base}/records`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ records: payloadRecords }),
-    });
-    if (!post.ok) throw new Error(`Database save failed (${post.status})`);
+  const paths = ["/records", "/api/records", ""];
+  let lastStatus = "";
+  for (const path of paths) {
+    const url = `${base}${path}`;
+    try {
+      let res = await fetch(url, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ records: payloadRecords }),
+      });
+      if (res.ok) return;
+
+      lastStatus = `${res.status}`;
+      res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ records: payloadRecords }),
+      });
+      if (res.ok) return;
+      lastStatus = `${res.status}`;
+    } catch (err) {
+      lastStatus = err.message;
+    }
   }
+  throw new Error(`Database save failed (${lastStatus || "no endpoint accepted records"})`);
 }
 
 function normalizeRecord(r) {
@@ -209,13 +224,13 @@ function normalizeRecord(r) {
   if (!out.id) out.id = String(Date.now());
   if (!out.createdAt) out.createdAt = new Date().toISOString();
   if (typeof out.faceDescriptor === "string" && out.faceDescriptor) {
-    try { out.faceDescriptor = JSON.parse(out.faceDescriptor); } catch(e) {}
+    try { out.faceDescriptor = JSON.parse(out.faceDescriptor); } catch { /* keep original descriptor */ }
   }
   return out;
 }
 
 export async function loadRecordsForSource(source, settings, loadLocalFn) {
-  if (source === "local") return loadLocalFn();
+  if (source === "local") return loadLocalFn ? loadLocalFn() : [];
   if (source === "google") return fetchFromGoogleSheets(settings);
   if (source === "database") return fetchFromDatabase(settings);
   throw new Error("Unknown data source");
@@ -238,12 +253,16 @@ export async function saveRecordsForSource(source, settings, records) {
 }
 
 export async function sendAuditLog(source, settings, event, details) {
-  if (!settings.officerId) return; // Silent if no officer ID set
+  const officerId = settings.officerId || settings.policeProfile?.policeId;
+  if (!officerId) return; // Silent if officer identity has not been generated yet.
   const payload = {
     timestamp: new Date().toISOString(),
-    officerId: settings.officerId,
+    officerId,
+    officerName: settings.officerName || settings.policeProfile?.name || officerId,
+    station: settings.policeProfile?.station || "",
     event,
-    details
+    details,
+    officerPhoto: settings.policeProfile?.photoUrl || ""
   };
 
   if (source === "google" && isAppsScriptConfigured(settings)) {
@@ -256,7 +275,10 @@ export async function sendAuditLog(source, settings, event, details) {
       const headers = { "Content-Type": "application/json" };
       if (settings.apiSecret) headers["x-api-secret"] = settings.apiSecret;
       try {
-        await fetch(`${base}/logs`, { method: "POST", headers, body: JSON.stringify({ payload }) });
+        let res = await fetch(`${base}/logs`, { method: "POST", headers, body: JSON.stringify({ payload }) });
+        if (!res.ok) {
+          res = await fetch(`${base}/api/logs`, { method: "POST", headers, body: JSON.stringify({ payload }) });
+        }
       } catch (e) { console.warn("Audit log to Custom DB failed", e); }
     }
   }

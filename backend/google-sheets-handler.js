@@ -78,7 +78,7 @@ class GoogleSheetsHandler {
       return { success: true, message: 'Authentication successful' };
     } catch (error) {
       console.error('Error handling callback:', error.message);
-      throw new Error(`OAuth callback failed: ${error.message}`);
+      throw new Error(`OAuth callback failed: ${error.message}`, { cause: error });
     }
   }
 

@@ -46,10 +46,14 @@ async function initDatabase() {
         id INT AUTO_INCREMENT PRIMARY KEY,
         timestamp VARCHAR(50),
         officerId VARCHAR(100),
+        officerName VARCHAR(150),
+        station VARCHAR(150),
         event VARCHAR(100),
         details TEXT
       )
     `);
+    await pool.query('ALTER TABLE logs ADD COLUMN officerName VARCHAR(150)').catch(() => {});
+    await pool.query('ALTER TABLE logs ADD COLUMN station VARCHAR(150)').catch(() => {});
 
     console.log("CrimeTrack Database Initialized Successfully!");
   } catch (err) {
@@ -99,8 +103,8 @@ app.post('/api/logs', async (req, res) => {
     const payload = req.body.payload;
     if (!payload) return res.status(400).json({ error: 'Missing log payload' });
     
-    await pool.query('INSERT INTO logs (timestamp, officerId, event, details) VALUES (?, ?, ?, ?)', [
-      payload.timestamp, payload.officerId, payload.event, payload.details
+    await pool.query('INSERT INTO logs (timestamp, officerId, officerName, station, event, details) VALUES (?, ?, ?, ?, ?, ?)', [
+      payload.timestamp, payload.officerId, payload.officerName || '', payload.station || '', payload.event, payload.details
     ]);
     res.json({ success: true });
   } catch (err) {

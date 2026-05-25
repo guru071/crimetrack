@@ -13,7 +13,7 @@
  * 4. Ensure backend is running on http://localhost:3001
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import GoogleSheetsClient from '../backend/google-sheets-client.js';
 
 // Initialize client

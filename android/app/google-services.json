@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "351985375859",
+    "project_id": "case-3791e",
+    "storage_bucket": "case-3791e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:351985375859:android:abbb044ae74332263aa806",
+        "android_client_info": {
+          "package_name": "tech.goatech.crimetrack"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "351985375859-583jekuhsl2cvb9d7lvsbg7dh7c15ebk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYpNfUQhHQvSpc88cKSOy0b3NnVQ1rk3A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "351985375859-583jekuhsl2cvb9d7lvsbg7dh7c15ebk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

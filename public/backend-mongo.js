@@ -77,6 +77,8 @@ app.post('/api/logs', async (req, res) => {
     await db.collection(logsCollectionName).insertOne({
       timestamp: payload.timestamp,
       officerId: payload.officerId,
+      officerName: payload.officerName || '',
+      station: payload.station || '',
       event: payload.event,
       details: payload.details
     });

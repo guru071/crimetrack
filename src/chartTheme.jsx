@@ -1,5 +1,3 @@
-import React from 'react';
-
 export const CHART_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
 export const STATUS_SLICE_COLORS = {

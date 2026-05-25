@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import GoogleSheetsHandler from './google-sheets-handler.js';
+import { uploadImageToDriveUsingServiceAccount } from './google-drive-service.js';
 
 dotenv.config();
 
@@ -242,12 +243,9 @@ app.post('/api/sheets/upload-image', async (req, res) => {
       });
     }
 
-    const handler = initializeSheetsHandler();
-
     // Create temporary file from base64
-    const tempFilePath = `/tmp/${Date.now()}-${fileName}`;
     const buffer = Buffer.from(base64Data, 'base64');
-
+    
     // Note: Writing to project temp directory instead of /tmp
     const fs = await import('fs');
     const path = await import('path');
@@ -262,7 +260,7 @@ app.post('/api/sheets/upload-image', async (req, res) => {
     fs.writeFileSync(tempFilePath2, buffer);
 
     try {
-      const result = await handler.uploadImageToDrive(
+      const result = await uploadImageToDriveUsingServiceAccount(
         tempFilePath2,
         fileName,
         mimeType,
@@ -284,7 +282,7 @@ app.post('/api/sheets/upload-image', async (req, res) => {
     }
   } catch (error) {
     console.error('Error uploading image:', error);
-    const statusCode = error.message.includes('Quota') ? 429 : 500;
+    const statusCode = error?.message?.includes('Quota') ? 429 : 500;
     res.status(statusCode).json({
       success: false,
       error: error.message,
@@ -358,6 +356,16 @@ app.get('/api/health', (req, res) => {
     success: true,
     message: 'Google Sheets API server is running',
     port: PORT,
+    driveUploadMode: 'OAuth or Apps Script recommended; service accounts need Shared Drive/domain delegation for Drive uploads',
+  });
+});
+
+app.get('/api/sheets/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Google Sheets API server is running',
+    port: PORT,
+    driveUploadMode: 'OAuth or Apps Script recommended; service accounts need Shared Drive/domain delegation for Drive uploads',
   });
 });
 
@@ -377,7 +385,7 @@ app.use((req, res) => {
 /**
  * Global error handler
  */
-app.use((err, req, res, next) => {
+app.use((err, req, res) => {
   console.error('Unhandled error:', err);
   res.status(500).json({
     success: false,

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
-  X, Cloud, CheckCircle, AlertTriangle, Loader, Copy, ExternalLink
+  X, Cloud, CheckCircle, AlertTriangle, Loader, ExternalLink
 } from "lucide-react";
 
 const T = {

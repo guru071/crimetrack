@@ -1,45 +1,15 @@
-/* Modern glass UI — works with --ct-* vars from TimeBasedTheme */
+/* Professional app shell */
 
 .ct-app {
   position: relative;
-  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: 100svh;
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-.ct-ambient {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
-}
-
-.ct-ambient::before,
-.ct-ambient::after {
-  content: "";
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: var(--ct-orb-opacity, 0.45);
-  transition: opacity 1s ease;
-}
-
-.ct-ambient::before {
-  width: min(70vw, 420px);
-  height: min(70vw, 420px);
-  top: -8%;
-  right: -12%;
-  background: var(--ct-orb-a, rgba(255, 255, 255, 0.15));
-}
-
-.ct-ambient::after {
-  width: min(60vw, 360px);
-  height: min(60vw, 360px);
-  bottom: 12%;
-  left: -15%;
-  background: var(--ct-orb-b, rgba(255, 255, 255, 0.1));
-}
+.ct-ambient { display: none; }
 
 .ct-scrim {
   position: fixed;
@@ -47,38 +17,37 @@
   pointer-events: none;
   z-index: 0;
   background: var(--ct-scrim, rgba(0, 0, 0, 0.38));
-  transition: background 0.8s ease;
 }
 
 .ct-content {
   position: relative;
   z-index: 1;
-  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: 100svh;
+  width: min(100%, 960px);
+  margin: 0 auto;
+  padding-left: max(0px, env(safe-area-inset-left));
+  padding-right: max(0px, env(safe-area-inset-right));
 }
 
 /* Glass surfaces */
 .ct-glass {
   background: var(--ct-glass-bg);
-  backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.35);
-  -webkit-backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.35);
   border: 1px solid var(--ct-glass-border);
   box-shadow: var(--ct-glass-shadow);
+  border-radius: 12px;
 }
 
 .ct-glass-header {
   background: var(--ct-header-bg);
-  backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.4);
   border-bottom: 1px solid var(--ct-glass-border);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 8px rgba(15, 23, 42, 0.08);
 }
 
 .ct-glass-nav {
   background: var(--ct-nav-bg);
-  backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--ct-glass-blur)) saturate(1.4);
   border-top: 1px solid var(--ct-glass-border);
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 -1px 8px rgba(15, 23, 42, 0.08);
 }
 
 .ct-period-pill {
@@ -133,7 +102,6 @@
 
 .ct-app button.ct-glass-btn {
   background: var(--ct-glass-bg);
-  backdrop-filter: blur(12px);
   border: 1px solid var(--ct-glass-border);
   color: var(--ct-text);
 }
@@ -145,13 +113,13 @@
 
 /* Recharts — axis only; pie legends use ChartLegendList in React */
 .ct-app .recharts-cartesian-axis-tick-value {
-  fill: #f1f5f9 !important;
+  fill: var(--ct-muted) !important;
   font-size: 12px;
   font-weight: 500;
 }
 
 .ct-app .recharts-cartesian-grid line {
-  stroke: rgba(255, 255, 255, 0.15);
+  stroke: rgba(15, 23, 42, 0.12);
 }
 
 @keyframes ct-spin {
@@ -169,4 +137,12 @@
   paint-order: stroke;
   stroke: rgba(0, 0, 0, 0.85);
   stroke-width: 3px;
+}
+
+@media (max-width: 520px), (max-height: 720px) {
+  .ct-glass,
+  .ct-glass-header,
+  .ct-glass-nav {
+    border-radius: 10px;
+  }
 }
