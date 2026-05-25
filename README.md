@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # CrimeTrack
 
 CrimeTrack is a police record tracking app with local storage, Google Sheets/App Script sync, custom database sync, Firebase login/profile storage, camera, mic dictation, face scan, notifications, APK, and Windows EXE packaging.
@@ -23,3 +24,6 @@ npm run dev
 ```
 
 Build commands are listed in `API_SETUP.md`.
+=======
+# crimetrack
+>>>>>>> 73bf780b04cd763e27a1c14c4f286dca79519328
