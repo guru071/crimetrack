@@ -1,7 +1,9 @@
 {
   "name": "case",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "C.A.S.E police records desktop app",
+  "author": "GOAT'ECH",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,14 +17,20 @@
   },
   "dependencies": {
     "@capacitor-community/speech-recognition": "^7.0.1",
+    "@capacitor-firebase/authentication": "^8.2.0",
     "@capacitor/android": "^8.3.4",
     "@capacitor/app": "^8.1.0",
     "@capacitor/core": "^8.3.4",
     "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/keyboard": "^8.0.3",
     "@capacitor/local-notifications": "^8.2.0",
     "@capacitor/share": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
+    "@capawesome-team/capacitor-file-opener": "^8.0.1",
     "@capgo/capacitor-native-biometric": "^8.4.5",
     "@vladmandic/human": "^3.3.6",
+    "capacitor-voice-recorder": "^7.0.6",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
     "dotenv": "^17.4.2",
@@ -34,11 +42,14 @@
     "jspdf-autotable": "^5.0.8",
     "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",
+    "pdfjs-dist": "^4.10.38",
     "peerjs": "^1.5.5",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-image-crop": "^11.0.10",
-    "recharts": "^3.8.1"
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.8.1",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.3.4",
@@ -46,6 +57,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "cross-env": "^10.1.0",
     "electron": "^42.2.0",
     "electron-builder": "^26.8.1",
     "eslint": "^10.3.0",
@@ -62,9 +74,25 @@
   "main": "electron/main.cjs",
   "build": {
     "appId": "tech.goatech.crimetrack",
+    "productName": "C.A.S.E",
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "extraMetadata": {
+      "main": "electron/main.cjs",
+      "dependencies": {}
+    },
     "win": {
       "target": "nsis",
-      "icon": "build/icon.png"
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "installerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "shortcutName": "C.A.S.E",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "license": "build/license.txt",
+      "include": "build/installer.nsh"
     },
     "directories": {
       "output": "release"
@@ -72,7 +100,12 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/**/*",
+      "!android/**/*",
+      "!backend/**/*",
+      "!scripts/**/*",
+      "!release/**/*"
     ]
   }
 }

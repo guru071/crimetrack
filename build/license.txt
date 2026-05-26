@@ -1,0 +1,27 @@
+END-USER LICENSE AGREEMENT AND PRIVACY POLICY
+FOR C.A.S.E. (CRIMINAL ACTIVITY SURVEILLANCE ENGINE)
+
+IMPORTANT — READ CAREFULLY: By installing, copying, or otherwise using C.A.S.E., you agree to be bound by the terms of this End-User License Agreement ("EULA") and Privacy Policy.
+
+1. LICENSE GRANT
+GOAT'ECH grants you a revocable, non-exclusive, non-transferable, limited license to download, install and use the Application strictly in accordance with the terms of this Agreement. This software is provided for authorized law enforcement and security management purposes.
+
+2. RESTRICTIONS
+You agree not to, and you will not permit others to:
+a) License, sell, rent, lease, assign, distribute, transmit, host, outsource, disclose or otherwise commercially exploit the Application.
+b) Modify, make derivative works of, disassemble, decrypt, reverse compile or reverse engineer any part of the Application.
+
+3. PRIVACY & DATA OWNERSHIP
+a) Your Data: All criminal records, officer profiles, operations data, and files entered into C.A.S.E are stored exclusively in your own configured database (e.g., Firebase). GOAT'ECH does NOT collect, store, or have access to any of this operational data. You are the sole owner and data controller.
+b) Local Storage: The Application may store temporary cache, tokens, and preferences locally on your device to improve performance.
+c) Third-Party Services: This Application interfaces with Google Firebase for database and authentication services. Your use of these services is governed by Google's Privacy Policy.
+
+4. DISCLAIMER OF LIABILITY
+C.A.S.E is provided "AS IS" without warranties of any kind. GOAT'ECH is not liable for any damages, data loss, unauthorized access, or legal consequences arising from the use of this software. You are solely responsible for ensuring your use of this software complies with local data protection and privacy laws.
+
+5. TERMINATION
+This EULA shall remain in effect until terminated by you or GOAT'ECH. GOAT'ECH may, in its sole discretion, at any time and for any or no reason, suspend or terminate this EULA with or without prior notice.
+
+By clicking "I Agree" or installing the software, you acknowledge that you have read this agreement, understand it, and agree to be bound by its terms and conditions.
+
+Copyright (c) 2026 GOAT'ECH. All rights reserved.

@@ -111,7 +111,7 @@
   background: color-mix(in srgb, var(--ct-glass-bg) 80%, var(--ct-accent) 20%);
 }
 
-/* Recharts — axis only; pie legends use ChartLegendList in React */
+/* Recharts  axis only; pie legends use ChartLegendList in React */
 .ct-app .recharts-cartesian-axis-tick-value {
   fill: var(--ct-muted) !important;
   font-size: 12px;

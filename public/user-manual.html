@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>C.A.S.E User Manual - GOAT'ECH</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    h1 {
+      color: #3b82f6;
+      margin-bottom: 10px;
+      font-size: 2.5em;
+    }
+    h2 {
+      color: #3b82f6;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      font-size: 1.8em;
+      border-bottom: 2px solid rgba(59, 130, 246, 0.3);
+      padding-bottom: 10px;
+    }
+    h3 {
+      color: #60a5fa;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    p { margin-bottom: 15px; }
+    ul, ol {
+      margin-left: 20px;
+      margin-bottom: 15px;
+    }
+    li { margin-bottom: 8px; }
+    code {
+      background: rgba(59, 130, 246, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      color: #60a5fa;
+    }
+    .section {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+    .feature {
+      background: rgba(16, 185, 129, 0.1);
+      border-left: 4px solid #10b981;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    .warning {
+      background: rgba(239, 68, 68, 0.1);
+      border-left: 4px solid #ef4444;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    .tip {
+      background: rgba(168, 85, 247, 0.1);
+      border-left: 4px solid #a855f7;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    .footer {
+      margin-top: 50px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      color: #888;
+      font-size: 0.9em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+    }
+    th, td {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 12px;
+      text-align: left;
+    }
+    th {
+      background: rgba(59, 130, 246, 0.1);
+      color: #60a5fa;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📖 C.A.S.E User Manual</h1>
+    <p style="color: #888; font-size: 0.95em;">Criminal Administration & Suspect Enforcement - Independent Police Records Management</p>
+    <p style="color: #888; margin-bottom: 30px;">By GOAT'ECH • Last Updated: May 2026</p>
+
+    <h2>Table of Contents</h2>
+    <ol>
+      <li><a href="#getting-started" style="color: #60a5fa; text-decoration: none;">Getting Started</a></li>
+      <li><a href="#login" style="color: #60a5fa; text-decoration: none;">Login & Authentication</a></li>
+      <li><a href="#records" style="color: #60a5fa; text-decoration: none;">Managing Criminal Records</a></li>
+      <li><a href="#profiles" style="color: #60a5fa; text-decoration: none;">Officer Profiles</a></li>
+      <li><a href="#operations" style="color: #60a5fa; text-decoration: none;">Secure Operations Room</a></li>
+      <li><a href="#excel" style="color: #60a5fa; text-decoration: none;">Bulk Data Management</a></li>
+      <li><a href="#analytics" style="color: #60a5fa; text-decoration: none;">Analytics & Reporting</a></li>
+      <li><a href="#security" style="color: #60a5fa; text-decoration: none;">Security & Privacy</a></li>
+    </ol>
+
+    <div id="getting-started">
+      <h2>Getting Started</h2>
+      <p>C.A.S.E is an independent police records management system designed for field teams and law enforcement agencies.</p>
+      
+      <div class="feature">
+        <strong>🎯 Key Features:</strong>
+        <ul>
+          <li>Local-first criminal record management</li>
+          <li>Firebase-based officer authentication</li>
+          <li>Encrypted peer-to-peer operations room</li>
+          <li>Biometric security (fingerprint/face lock)</li>
+          <li>Face recognition search</li>
+          <li>Google Sheets integration (optional)</li>
+          <li>Offline-capable with sync</li>
+          <li>Audit logging for compliance</li>
+        </ul>
+      </div>
+
+      <h3>System Requirements</h3>
+      <ul>
+        <li><strong>Device:</strong> Android phone, tablet, or desktop browser</li>
+        <li><strong>Connection:</strong> Internet for login & sync (offline operation supported)</li>
+        <li><strong>Storage:</strong> Minimum 100MB free space</li>
+        <li><strong>Permissions:</strong> Camera (face recognition), microphone (voice input), biometric sensors</li>
+      </ul>
+    </div>
+
+    <div id="login">
+      <h2>Login & Authentication</h2>
+      
+      <h3>Creating an Account</h3>
+      <ol>
+        <li>Open the app and click <code>Sign Up</code></li>
+        <li>Enter your email address and password</li>
+        <li>Create your officer profile (name, station, photo)</li>
+        <li>Check your email for verification link</li>
+        <li>Verify your account and log in</li>
+      </ol>
+
+      <div class="warning">
+        <strong>⚠️ Email Verification:</strong> Check your inbox for a Firebase verification email. If not received, click "Resend Verification" in the login screen.
+      </div>
+
+      <h3>App Lock - Biometric Security</h3>
+      <p>When you resume the app after minimizing it, you will be prompted for biometric authentication (fingerprint or face recognition). This ensures your record data is protected.</p>
+      <ul>
+        <li>First time: Allow biometric permissions when prompted</li>
+        <li>Subsequent opens: Unlock with your biometric</li>
+        <li>Failing biometric check will log you out for security</li>
+      </ul>
+
+      <div class="tip">
+        <strong>💡 Tip:</strong> Register your primary fingerprint first. Test biometric on your device settings before using the app.
+      </div>
+    </div>
+
+    <div id="records">
+      <h2>Managing Criminal Records</h2>
+
+      <h3>Adding a New Record</h3>
+      <ol>
+        <li>Click <code>+Add Record</code> button</li>
+        <li>Fill in personal details (name, age, address, etc.)</li>
+        <li>Upload a photo (optional but recommended for face recognition)</li>
+        <li>Enter criminal details (FIR number, case status, etc.)</li>
+        <li>Add tags, associates, hideouts if available</li>
+        <li>Click <code>Save Record</code></li>
+      </ol>
+
+      <div class="feature">
+        <strong>📸 Photo Upload Tips:</strong>
+        <ul>
+          <li>Use clear, front-facing photos</li>
+          <li>Good lighting recommended</li>
+          <li>Avoid sunglasses or extreme angles</li>
+          <li>Photos are stored in your Firebase database (encrypted)</li>
+        </ul>
+      </div>
+
+      <h3>Searching Records</h3>
+      <ul>
+        <li><strong>Text Search:</strong> Search by name, FIR number, address</li>
+        <li><strong>Face Recognition:</strong> Click camera icon to scan a face and find matches</li>
+        <li><strong>Filters:</strong> Filter by status, year, area, threat level</li>
+        <li><strong>Advanced Filters:</strong> Combine multiple filters</li>
+      </ul>
+
+      <div class="tip">
+        <strong>💡 Face Recognition:</strong> Requires registered photos. Higher similarity threshold = better matches. Matches below 75% similarity may be unreliable.
+      </div>
+
+      <h3>Editing & Deleting Records</h3>
+      <ul>
+        <li>Click a record to open details</li>
+        <li>Click <code>Edit</code> to modify information</li>
+        <li>Click <code>Delete</code> to remove (⚠️ irreversible)</li>
+      </ul>
+    </div>
+
+    <div id="profiles">
+      <h2>Officer Profiles</h2>
+
+      <h3>Viewing Your Profile</h3>
+      <ol>
+        <li>Click <code>Profile</code> tab at bottom</li>
+        <li>View your officer details (name, station, police ID)</li>
+        <li>See your registered photo</li>
+      </ol>
+
+      <h3>Editing Your Profile</h3>
+      <ol>
+        <li>Click <code>Edit Profile</code> button</li>
+        <li>Update name or police station</li>
+        <li>Upload a new photo by clicking on the image</li>
+        <li>Click checkmark to save changes</li>
+      </ol>
+
+      <div class="warning">
+        <strong>⚠️ Profile Updates:</strong> Changes are saved to your Firebase account and synced across devices.
+      </div>
+    </div>
+
+    <div id="operations">
+      <h2>Secure Operations Room</h2>
+      <p>The Operations Room is an encrypted P2P chat system for teams to share criminal records and coordinate investigations in real-time.</p>
+
+      <h3>Joining an Operation</h3>
+      <ol>
+        <li>Click <code>Operations</code> tab</li>
+        <li>Enter <strong>Operation ID</strong> (e.g., ALPHA-1)</li>
+        <li>Enter the <strong>Secret Passkey</strong> shared by your team</li>
+        <li>Click <code>Connect to Secure Channel</code></li>
+      </ol>
+
+      <h3>Sharing Records</h3>
+      <ul>
+        <li>In Operations Room, click <code>+</code> icon</li>
+        <li>Select a criminal record from your database</li>
+        <li>Record encrypted and shared with all connected peers</li>
+      </ul>
+
+      <h3>Chat Features</h3>
+      <ul>
+        <li>Send encrypted messages to team members</li>
+        <li>Edit or delete your messages</li>
+        <li>Share criminal records in-chat</li>
+        <li>Face scan to quickly find and share records</li>
+      </ul>
+
+      <div class="tip">
+        <strong>💡 Security:</strong> All operations use AES encryption. The passkey is encrypted and saved in Firebase automatically.
+      </div>
+
+      <div class="feature">
+        <strong>🔐 How Encryption Works:</strong>
+        <ul>
+          <li>Your passkey is hashed with your unique UID</li>
+          <li>Messages encrypted before leaving your device</li>
+          <li>Only peers with correct passkey can decrypt</li>
+          <li>No central server stores unencrypted data</li>
+        </ul>
+      </div>
+
+      <h3>Troubleshooting Connections</h3>
+      <ul>
+        <li><strong>Timeout Error:</strong> Check internet connection, try again in 15 seconds</li>
+        <li><strong>Room Offline:</strong> Operation creator must be online first, or create new room</li>
+        <li><strong>Wrong Passkey:</strong> Messages will show encrypted if key mismatch</li>
+      </ul>
+    </div>
+
+    <div id="excel">
+      <h2>Bulk Data Management (Excel View)</h2>
+      <p>Manage multiple records in a spreadsheet-like interface for efficient bulk operations.</p>
+
+      <h3>Accessing Excel View</h3>
+      <ol>
+        <li>Click <code>Bulk Mgmt</code> or <code>Excel</code> tab</li>
+        <li>View all records in grid format</li>
+        <li>Edit cells directly</li>
+      </ol>
+
+      <h3>Excel Operations</h3>
+      <ul>
+        <li><strong>Add Row:</strong> Click <code>+</code> to add new record</li>
+        <li><strong>Edit Cell:</strong> Click to edit, type, or use voice input (🎤)</li>
+        <li><strong>Voice Input:</strong> Click microphone icon to speak data (speech-to-text)</li>
+        <li><strong>Copy/Paste:</strong> Use Ctrl+C/V or right-click menu</li>
+        <li><strong>Sort:</strong> Click column header to sort ascending/descending</li>
+        <li><strong>Filter:</strong> Use search box to filter rows</li>
+        <li><strong>Delete Row:</strong> Select row and click delete</li>
+      </ul>
+
+      <h3>Duplicate Detection</h3>
+      <ul>
+        <li>Automatically detects duplicate names, FIR numbers</li>
+        <li>Highlight duplicates or hide non-duplicates</li>
+        <li>Remove duplicates (keep first or last)</li>
+      </ul>
+
+      <h3>Undo/Redo</h3>
+      <ul>
+        <li>Undo: Ctrl+Z or click ↶ icon</li>
+        <li>Redo: Ctrl+Y or click ↷ icon</li>
+        <li>Undo stack: up to 40 steps</li>
+      </ul>
+    </div>
+
+    <div id="analytics">
+      <h2>Analytics & Reporting</h2>
+
+      <h3>Dashboard Overview</h3>
+      <ul>
+        <li><strong>Record Count:</strong> Total records, by status</li>
+        <li><strong>Threat Analysis:</strong> High/Critical threat levels</li>
+        <li><strong>Geographic Distribution:</strong> Cases by area of operation</li>
+        <li><strong>Gang Networks:</strong> Top criminals and associates</li>
+        <li><strong>Timeline:</strong> Cases by year/month</li>
+      </ul>
+
+      <h3>Threat Levels</h3>
+      <table>
+        <tr>
+          <th>Level</th>
+          <th>Color</th>
+          <th>Criteria</th>
+        </tr>
+        <tr>
+          <td>LOW</td>
+          <td>🟢 Green</td>
+          <td>Minor offenses, first-time cases</td>
+        </tr>
+        <tr>
+          <td>MEDIUM</td>
+          <td>🟡 Yellow</td>
+          <td>Repeat offenders, moderate severity</td>
+        </tr>
+        <tr>
+          <td>HIGH</td>
+          <td>🟠 Orange</td>
+          <td>Violent crimes, multiple cases</td>
+        </tr>
+        <tr>
+          <td>EXTREME</td>
+          <td>🔴 Red</td>
+          <td>Dangerous criminals, organized crime</td>
+        </tr>
+      </table>
+
+      <h3>Exporting Data</h3>
+      <ul>
+        <li><strong>Excel Export:</strong> Download records as .xlsx file</li>
+        <li><strong>PDF Report:</strong> Generate printable case summaries</li>
+        <li><strong>Google Sheets:</strong> Sync to configured Google Sheet (if enabled)</li>
+      </ul>
+    </div>
+
+    <div id="security">
+      <h2>Security & Privacy</h2>
+
+      <h3>Data Storage</h3>
+      <div class="feature">
+        <strong>🔒 Your Data, Your Server:</strong>
+        <ul>
+          <li>All records stored in YOUR Firebase database</li>
+          <li>GOAT'ECH has zero access to your data</li>
+          <li>You control who has access</li>
+          <li>End-to-end encryption for operations room</li>
+        </ul>
+      </div>
+
+      <h3>Permissions Required</h3>
+      <ul>
+        <li><strong>Camera:</strong> For face recognition and photo upload</li>
+        <li><strong>Microphone:</strong> For voice input and speech-to-text</li>
+        <li><strong>Biometric:</strong> For fingerprint/face lock on app resume</li>
+        <li><strong>Storage:</strong> For file operations and offline sync</li>
+      </ul>
+
+      <h3>Compliance</h3>
+      <ul>
+        <li><strong>Audit Logging:</strong> All actions logged for accountability</li>
+        <li><strong>GDPR Compliant:</strong> Data deletion, export, minimal tracking</li>
+        <li><strong>Local Laws:</strong> Your organization is responsible for compliance with local data protection laws (IT Act, DPDP Act, etc.)</li>
+      </ul>
+
+      <h3>Account Security</h3>
+      <div class="warning">
+        <strong>⚠️ Important:</strong>
+        <ul>
+          <li>Use a strong, unique password</li>
+          <li>Enable biometric lock on your device</li>
+          <li>Never share your login credentials</li>
+          <li>Log out when using shared devices</li>
+          <li>Delete your account if you leave the organization</li>
+        </ul>
+      </div>
+
+      <h3>Privacy Policy & Terms</h3>
+      <p>For full privacy policy and legal terms, visit: <a href="https://goatech.tech" style="color: #60a5fa; text-decoration: underline;">goatech.tech</a></p>
+      <p><strong>Contact:</strong> <code>goat.technology.maghs@gmail.com</code></p>
+    </div>
+
+    <h2>Frequently Asked Questions (FAQ)</h2>
+
+    <h3>Q: Is my data secure?</h3>
+    <p><strong>A:</strong> Yes. All data is stored in your Firebase database (which you control), encrypted in transit, and encrypted at rest in operations room. GOAT'ECH cannot access your data.</p>
+
+    <h3>Q: What if I lose my phone?</h3>
+    <p><strong>A:</strong> Your data is in Firebase, not on the phone. Log in on a new device with your email. Local cache will be cleared.</p>
+
+    <h3>Q: Can I use this offline?</h3>
+    <p><strong>A:</strong> Yes, for viewing and editing. Sync happens when connection returns. Operations room requires internet.</p>
+
+    <h3>Q: How do I share data with my team?</h3>
+    <p><strong>A:</strong> Use the Operations Room feature. Create an operation with a passkey and invite team members to join.</p>
+
+    <h3>Q: What if I forget my password?</h3>
+    <p><strong>A:</strong> Click "Forgot Password" on login screen. Follow the email reset link from Firebase.</p>
+
+    <h3>Q: How accurate is face recognition?</h3>
+    <p><strong>A:</strong> Requires high-quality registered photos. ~75% similarity is good confidence. Manual verification recommended before action.</p>
+
+    <h3>Q: Can I delete my account?</h3>
+    <p><strong>A:</strong> Yes, go to Profile > Danger Zone > Delete My Account. This is permanent and removes all your data.</p>
+
+    <div class="footer">
+      <p><strong>C.A.S.E v1.0 User Manual</strong></p>
+      <p>© GOAT'ECH 2026 | Built for Law Enforcement</p>
+      <p>For support: <a href="mailto:goat.technology.maghs@gmail.com" style="color: #60a5fa;">goat.technology.maghs@gmail.com</a></p>
+    </div>
+  </div>
+</body>
+</html>

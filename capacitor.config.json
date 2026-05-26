@@ -1,5 +1,29 @@
 {
-  "appId": "tech.goatech.crimetrack",
-  "appName": "C.A.S.E",
-  "webDir": "dist"
+  "appId": "tech.goatech.crimetrack.police",
+  "appName": "CrimeTrack Police",
+  "webDir": "dist",
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": true,
+      "style": "DARK"
+    },
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#020817",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP"
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": [
+        "google.com"
+      ]
+    },
+    "Keyboard": {
+      "resize": "none",
+      "resizeOnFullScreen": true,
+      "style": "DARK"
+    }
+  }
 }

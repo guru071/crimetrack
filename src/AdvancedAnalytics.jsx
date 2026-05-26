@@ -63,7 +63,7 @@ export function AdvancedAnalyticsDashboard({ records, theme, css }) {
 
       {/* Risk Score Distribution */}
       <div style={{ ...css.card, marginBottom: 16 }}>
-        <div style={css.sectionTitle}>▸ Risk Score Distribution</div>
+        <div style={css.sectionTitle}> Risk Score Distribution</div>
         <ResponsiveContainer width="100%" height={260}>
           <PieChart>
             <Pie
@@ -87,7 +87,7 @@ export function AdvancedAnalyticsDashboard({ records, theme, css }) {
 
       {/* Crime Hotspots */}
       <div style={{ ...css.card, marginBottom: 16 }}>
-        <div style={css.sectionTitle}>▸ Top Crime Hotspots</div>
+        <div style={css.sectionTitle}> Top Crime Hotspots</div>
         {topHotspots.length > 0 ? (
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={topHotspots}>
@@ -105,7 +105,7 @@ export function AdvancedAnalyticsDashboard({ records, theme, css }) {
 
       {/* Timeline */}
       <div style={{ ...css.card, marginBottom: 16 }}>
-        <div style={css.sectionTitle}>▸ Records Over Time</div>
+        <div style={css.sectionTitle}> Records Over Time</div>
         {timelineData.length > 0 ? (
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={timelineData}>
@@ -124,7 +124,7 @@ export function AdvancedAnalyticsDashboard({ records, theme, css }) {
       {/* Gang Network */}
       {topGangs.length > 0 && (
         <div style={{ ...css.card, marginBottom: 16 }}>
-          <div style={css.sectionTitle}>▸ Gang Network (Top Members)</div>
+          <div style={css.sectionTitle}> Gang Network (Top Members)</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {topGangs.map((g, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${theme.border}` }}>

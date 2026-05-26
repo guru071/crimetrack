@@ -39,6 +39,10 @@ cors.json
 # Electron Release
 release/
 
+# Android Build Outputs (APK files)
+android/app/build/outputs/
+android/build/
+
 # Python
 backend/venv/
 backend/__pycache__/

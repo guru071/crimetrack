@@ -1,84 +1,52 @@
 /**
  * Google Sign-In for APK
- * For now: Uses web popup (works in WebView on Android)
- * This is the fastest, most reliable solution
+ *
+ * HOW IT WORKS:
+ *  - Android WebView normally contains " wv" in its User-Agent string.
+ *  - Google detects this and blocks OAuth ("Unable to process request").
+ *  - MainActivity.java removes " wv" from the UA, making Google treat
+ *    the WebView as a regular Chrome browser.
+ *  - So signInWithPopup() works directly  no Chrome Custom Tab redirect needed.
+ *
+ * Both Android (APK) and Web use signInWithPopup().
+ * signInWithRedirect is NOT used  it causes redirect-to-localhost issues in Capacitor.
  */
 
 import { auth } from './firebase';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
-/**
- * Initialize Google Sign-In
- * No native plugin needed - web popup works on APK too!
- */
 export async function initializeNativeGoogleSignIn() {
-  console.log('✓ Google Sign-In ready (using web popup for all platforms)');
+  console.log(' Google Sign-In ready');
   return true;
 }
 
-/**
- * Google Sign-In
- * Works on: Web browser + APK WebView
- * Uses: Web popup (most reliable)
- */
 export async function nativeGoogleSignIn() {
-  try {
-    if (!auth) {
-      throw new Error('Firebase not configured');
-    }
+  if (!auth) throw new Error('Firebase not configured');
 
-    console.log('Initiating Google Sign-In...');
-
+  if (Capacitor.isNativePlatform()) {
+    // Native Android/iOS: Use native plugin to avoid opening Chrome
+    const result = await FirebaseAuthentication.signInWithGoogle({
+      clientId: "351985375859-583jekuhsl2cvb9d7lvsbg7dh7c15ebk.apps.googleusercontent.com"
+    });
+    const credential = GoogleAuthProvider.credential(result.credential?.idToken);
+    const userCredential = await signInWithCredential(auth, credential);
+    return userCredential.user;
+  } else {
+    // Web / Electron: Use standard popup
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
-
     const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-
-    console.log('✓ Google Sign-In successful');
-    return user;
-  } catch (err) {
-    console.error('Google Sign-In failed:', err);
-
-    let friendlyError = 'Google Sign-In failed';
-
-    if (err.code === 'auth/popup-closed-by-user') {
-      friendlyError = 'Sign-In was canceled';
-    } else if (err.code === 'auth/popup-blocked') {
-      friendlyError = 'Popup was blocked - allow popups for this app';
-    } else if (err.code === 'auth/network-request-failed') {
-      friendlyError = 'Network error - check your connection';
-    }
-
-    throw new Error(friendlyError, { cause: err });
+    return result.user;
   }
 }
 
-/**
- * Google Sign-Out
- */
-export async function nativeGoogleSignOut() {
-  try {
-    // Firebase handles sign out automatically
-    console.log('✓ Signed out');
-  } catch (err) {
-    console.error('Sign out failed:', err);
-  }
+export async function checkGoogleRedirectResult() {
+  // We use native plugin or popup, no redirect
+  return null;
 }
 
-/**
- * Get current user
- */
-export async function getCurrentNativeGoogleUser() {
-  if (!auth?.currentUser) {
-    return null;
-  }
-  return auth.currentUser;
-}
-
-/**
- * Check if Google Sign-In is available
- */
 export function isNativeGoogleSignInAvailable() {
-  return true; // Always available (uses web popup)
+  return true;
 }

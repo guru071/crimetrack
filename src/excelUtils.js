@@ -54,7 +54,7 @@ export function recordToExcelRow(record) {
   const row = {};
   EXCEL_COLUMNS.forEach((c) => {
     if (c.key === "photo") row[c.key] = "";
-    else row[c.key] = record[c.key] ?? "";
+    else row[c.key] = record[c.key]  -  "";
   });
   return row;
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, ChevronRight, Eye, Lock, Mail, Shield, User } from 'lucide-react';
-import { getTimeBasedTheme, themeToCssVars } from './TimeBasedTheme';
+import { getSelectedTheme, themeToCssVars } from './TimeBasedTheme';
 import { Capacitor } from '@capacitor/core';
 import {
   auth,
@@ -10,15 +10,13 @@ import {
   doc,
   getDoc,
   setDoc,
-  GoogleAuthProvider,
-  signInWithPopup,
   sendEmailVerification,
   applyActionCode,
   collection,
   getDocs
 } from './firebase';
 import { sendVerificationEmail } from './emailService';
-import { nativeGoogleSignIn } from './nativeGoogleSignIn';
+import { nativeGoogleSignIn, checkGoogleRedirectResult } from './nativeGoogleSignIn';
 
 function withTimeout(promise, ms, message) {
   let timer;
@@ -37,7 +35,10 @@ function friendlyFirebaseError(err) {
     return 'Firebase Storage is not enabled, or the storage bucket is wrong. Enable Storage in Firebase Console or use the Apps Script Drive upload URL.';
   }
   if (message.includes('auth/popup') || message.includes('popup')) {
-    return 'Google sign-in popup was blocked or canceled. On APK, use email/password unless native Google sign-in is configured.';
+    return 'Google sign-in popup was blocked or canceled. Please use email/password login.';
+  }
+  if (message.includes('auth/web-storage-unsupported')) {
+    return 'Your browser has cookies/storage disabled. Please allow cookies for Google Sign-In.';
   }
   return message;
 }
@@ -132,6 +133,7 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
   // Email Verification States
   const [verifyStep, setVerifyStep] = useState(false);
   const [verifyUser, setVerifyUser] = useState(null);
+  const [showPolicy, setShowPolicy] = useState(false);
   const [verifyProfile, setVerifyProfile] = useState(null);
   const [resendLoading, setResendLoading] = useState(false);
 
@@ -159,7 +161,7 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
   }, []);
 
   const fileInputRef = useRef(null);
-  const theme = getTimeBasedTheme();
+  const theme = getSelectedTheme();
 
   // Handle email verification callback from Firebase link
   useEffect(() => {
@@ -190,23 +192,25 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
     }
   }, []);
 
-  const triggerEmailVerification = async (user, profile) => {
+  const triggerEmailVerification = async (user, profileDraft) => {
     try {
       if (user.emailVerified) {
-        saveProfileLocally(profile);
-        onLoginSuccess(user, profile);
+        setLoading(true);
+        const savedProfile = await saveOfficerProfile(user, profileDraft);
+        saveProfileLocally(savedProfile);
+        onLoginSuccess(user, savedProfile);
         setLoading(false);
         return;
       }
 
       if (!user.emailVerified) {
         console.log('Starting email verification for:', user.email);
-        
+
         // Try EmailJS first (if configured)
         const emailSent = await sendVerificationEmail(
           user.email,
           user.uid,
-          profile?.name || user.displayName || user.email
+          profileDraft?.name || user.displayName || user.email
         );
 
         // Fallback to Firebase if EmailJS not configured
@@ -215,17 +219,18 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
           await sendEmailVerification(user, {
             url: `${window.location.origin}?email_verified=true`
           });
-          console.log('✓ Firebase verification email sent to:', user.email);
+          console.log(' Firebase verification email sent to:', user.email);
         }
       }
     } catch (err) {
-      console.error('❌ Email verification error:', err);
+      console.error(' Email verification error:', err);
       console.error('Error code:', err?.code);
       console.error('Error message:', err?.message);
       setError(`Email verification failed: ${err?.message || err}`);
     }
     setVerifyUser(user);
-    setVerifyProfile(profile);
+    setVerifyProfile(profileDraft);
+    localStorage.setItem('pending_officer_profile', JSON.stringify(profileDraft));
     setVerifyStep(true);
     setLoading(false);
   };
@@ -237,8 +242,19 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
     try {
       await verifyUser.reload();
       if (verifyUser.emailVerified) {
-        saveProfileLocally(verifyProfile);
-        onLoginSuccess(verifyUser, verifyProfile);
+        let draft = verifyProfile;
+        if (!draft) {
+          try { draft = JSON.parse(localStorage.getItem('pending_officer_profile')); } catch (e) { /* ignore */ }
+        }
+        if (draft && !draft.policeId) {
+          const savedProfile = await saveOfficerProfile(verifyUser, draft);
+          saveProfileLocally(savedProfile);
+          onLoginSuccess(verifyUser, savedProfile);
+          localStorage.removeItem('pending_officer_profile');
+        } else {
+          saveProfileLocally(draft || {});
+          onLoginSuccess(verifyUser, draft || {});
+        }
       } else {
         setError('Email not verified yet. Please click the link in your inbox and try again.');
       }
@@ -297,15 +313,15 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
   const completeProfile = async (user, provider = 'password') => {
     if (!name.trim() || !station.trim()) throw new Error('Name and police station are required.');
     if (!photoBase64 && !user.photoURL) throw new Error('A profile photo is required.');
-    const profile = await saveOfficerProfile(user, {
+    const profileDraft = {
       name,
       station,
       email: user.email || email,
       photoBase64,
       photoUrl: user.photoURL || '',
       provider
-    });
-    await triggerEmailVerification(user, profile);
+    };
+    await triggerEmailVerification(user, profileDraft);
   };
 
   const handleSubmit = async (e) => {
@@ -375,6 +391,17 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
     setStation(profile?.station || '');
   }, [onLoginSuccess]);
 
+  // On Android APK: check if we just returned from a Google redirect sign-in
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    checkGoogleRedirectResult().then(user => {
+      if (user) handleGoogleUser(user);
+    }).catch(err => {
+      console.warn('Redirect result check failed:', err);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
@@ -384,17 +411,17 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
       let user;
 
       if (Capacitor.isNativePlatform()) {
-        // Use native Google Sign-In on APK (professional app experience)
+        // Native Android/iOS: uses native plugin
         user = await nativeGoogleSignIn();
       } else {
-        // Use web popup on browser
-        const provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
-        const result = await signInWithPopup(auth, provider);
-        user = result.user;
+        // Web browser/Electron: uses popup
+        user = await nativeGoogleSignIn();
       }
 
-      await handleGoogleUser(user);
+      if (user) {
+        await handleGoogleUser(user);
+      }
+
     } catch (err) {
       console.error(err);
       setError(friendlyFirebaseError(err));
@@ -436,7 +463,7 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
     left: 14,
     top: '50%',
     transform: 'translateY(-50%)',
-    color: 'var(--ct-muted)',
+    color: '#10b981',
     pointerEvents: 'none'
   };
 
@@ -444,253 +471,324 @@ export default function LoginView({ onLoginSuccess, onDemo }) {
   const completingProfile = !!pendingUser;
 
   return (
-    <div
-      className="ct-app"
-      data-theme={theme.period}
-      style={{
-        ...themeToCssVars(theme),
-        minHeight: '100dvh',
-        width: '100vw',
-        backgroundColor: theme.bgColor,
-        backgroundImage: theme.gradient,
-        backgroundAttachment: 'fixed',
-        backgroundSize: 'cover',
-        color: 'var(--ct-text)',
-        position: 'relative',
-        overflow: 'hidden'
-      }}
-    >
-      <div className="ct-scrim" aria-hidden />
-      <div style={{ position: 'relative', zIndex: 1, minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 18, boxSizing: 'border-box' }}>
-        <div style={{ width: '100%', maxWidth: 420 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Shield size={24} color="var(--ct-accent)" />
-              <span style={{ fontSize: 18, fontWeight: 900, textShadow: 'var(--ct-text-shadow)' }}>C.A.S.E</span>
-            </div>
-            <span className="ct-period-pill">{theme.label}</span>
-          </div>
+    <>
+      <div
+        style={{
+          flex: 1,
+          width: '100%',
+          backgroundColor: '#050505',
+          backgroundImage: 'radial-gradient(circle at center, #111 0%, #000 100%)',
+          color: '#10b981',
+          fontFamily: '"Fira Code", monospace',
+          position: 'relative',
+          overflowY: 'auto',
+          overflowX: 'hidden'
+        }}
+      >
+        {/* Terminal Grid Background */}
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(16,185,129,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(16,185,129,0.03) 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
 
-          <div className="ct-glass" style={{ padding: 26, borderRadius: 24 }}>
-            <div style={{ textAlign: 'center', marginBottom: 24 }}>
-              <div style={{ width: 70, height: 70, background: 'var(--ct-accent)', borderRadius: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 14px 34px color-mix(in srgb, var(--ct-accent) 55%, transparent)' }}>
-                {verifyStep ? <Mail size={34} color="var(--ct-accent-fg)" /> : <Shield size={34} color="var(--ct-accent-fg)" />}
+        <div style={{ position: 'relative', zIndex: 1, minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 18, boxSizing: 'border-box' }}>
+          <div style={{ width: '100%', maxWidth: 460 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, borderBottom: '1px solid rgba(16,185,129,0.3)', paddingBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Shield size={28} color="#10b981" />
+                <span style={{ fontSize: 22, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', textShadow: '0 0 10px rgba(16,185,129,0.5)' }}>RESTRICTED ACCESS</span>
               </div>
-              <h1 style={{ fontSize: 28, fontWeight: 900, color: 'var(--ct-text)', margin: 0, letterSpacing: 0 }}>
-                {verifyStep ? 'Check Your Email' : 'Officer Portal'}
-              </h1>
-              <p style={{ color: 'var(--ct-muted)', fontSize: 14, margin: '8px 0 0', lineHeight: 1.45 }}>
-                {verifyStep
-                  ? `A verification link has been sent to ${verifyUser?.email || 'your email'}. Click the link then press the button below.`
-                  : completingProfile ? 'Complete your police profile. Your ID is generated automatically.'
-                    : isLogin ? 'Secure access for shared police records.' : 'Create an officer account.'}
-              </p>
+              <span style={{ color: '#ef4444', fontSize: 12, animation: 'pulse 2s infinite' }}>[ LEVEL 4 CLEARANCE REQUIRED ]</span>
             </div>
 
-            {error && (
-              <div style={{ padding: 12, background: 'color-mix(in srgb, var(--ct-red) 18%, transparent)', border: '1px solid color-mix(in srgb, var(--ct-red) 42%, transparent)', borderRadius: 12, color: 'var(--ct-red)', fontSize: 13, marginBottom: 16, textAlign: 'center' }}>
-                {error}
+            <div style={{ background: 'rgba(10,10,10,0.8)', padding: 30, borderRadius: 8, border: '1px solid rgba(16,185,129,0.4)', boxShadow: '0 0 30px rgba(16,185,129,0.1)' }}>
+              <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                <div style={{ width: 80, height: 80, border: '2px solid #10b981', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: 'inset 0 0 20px rgba(16,185,129,0.2)' }}>
+                  {verifyStep ? <Mail size={36} color="#10b981" /> : <Lock size={36} color="#10b981" />}
+                </div>
+                <h1 style={{ fontSize: 24, fontWeight: 900, color: '#fff', margin: 0, textTransform: 'uppercase' }}>
+                  {verifyStep ? 'AWAITING VERIFICATION' : 'POLICE TERMINAL LOGIN'}
+                </h1>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, margin: '10px 0 0', lineHeight: 1.5 }}>
+                  {verifyStep
+                    ? `Encrypted link dispatched to ${verifyUser?.email}. Authenticate to proceed.`
+                    : completingProfile ? 'Initialize new officer profile generation.'
+                      : isLogin ? 'Warning: Unauthorized access is a federal offense.' : 'Request officer clearance generation.'}
+                </p>
               </div>
-            )}
 
-            {verifyStep ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {/* Envelope animation */}
-                <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'center' }}>
-                    <Mail size={56} color="var(--ct-accent)" />
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--ct-muted)', lineHeight: 1.6 }}>
-                    Open your email and click the
-                    <br />
-                    <strong style={{ color: 'var(--ct-accent)' }}>"Verify Email"</strong> link sent by Firebase.
-                    <br />Then come back and press the button below.
-                  </div>
+              {error && (
+                <div style={{ padding: 12, background: 'rgba(239,68,68,0.1)', border: '1px left solid #ef4444', color: '#ef4444', fontSize: 13, marginBottom: 20, fontFamily: 'monospace' }}>
+                  [ERROR]: {error}
                 </div>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={handleCheckVerification}
-                  className="squish-btn"
-                  style={{ width: '100%', padding: 16, background: 'var(--ct-accent)', border: 'none', borderRadius: 16, color: 'var(--ct-accent-fg)', fontSize: 16, fontWeight: 900, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 12px 30px color-mix(in srgb, var(--ct-accent) 45%, transparent)' }}
-                >
-                  {loading ? 'Checking...' : 'I have verified my email'}
-                  {!loading && <ChevronRight size={18} />}
-                </button>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4 }}>
+              )}
+
+              {verifyStep ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Envelope animation */}
+                  <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                    <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'center' }}>
+                      <Mail size={56} color="var(--ct-accent)" />
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--ct-muted)', lineHeight: 1.6 }}>
+                      Open your email and click the
+                      <br />
+                      <strong style={{ color: 'var(--ct-accent)' }}>"Verify Email"</strong> link sent by Firebase.
+                      <br />Then come back and press the button below.
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    disabled={resendLoading}
-                    onClick={handleResendVerification}
-                    style={{ background: 'none', border: 'none', color: 'var(--ct-muted)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+                    disabled={loading}
+                    onClick={handleCheckVerification}
+                    className="squish-btn"
+                    style={{ width: '100%', padding: 16, background: 'var(--ct-accent)', border: 'none', borderRadius: 16, color: 'var(--ct-accent-fg)', fontSize: 16, fontWeight: 900, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 12px 30px color-mix(in srgb, var(--ct-accent) 45%, transparent)' }}
                   >
-                    {resendLoading ? 'Sending...' : 'Resend verification email'}
+                    {loading ? 'Checking...' : 'I have verified my email'}
+                    {!loading && <ChevronRight size={18} />}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setVerifyStep(false)}
-                    style={{ background: 'none', border: 'none', color: 'var(--ct-muted)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
-                  >
-                    Cancel
-                  </button>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4 }}>
+                    <button
+                      type="button"
+                      disabled={resendLoading}
+                      onClick={handleResendVerification}
+                      style={{ background: 'none', border: 'none', color: 'var(--ct-muted)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      {resendLoading ? 'Sending...' : 'Resend verification email'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVerifyStep(false)}
+                      style={{ background: 'none', border: 'none', color: 'var(--ct-muted)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <>
-                <form onSubmit={completingProfile ? handlePendingProfileSubmit : handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {(completingProfile || !isLogin) && (
-                    <>
-                      <div style={{ position: 'relative' }}>
-                        <User size={18} style={iconStyle} />
-                        <input style={inputStyle} placeholder="Officer full name" value={name} onChange={e => setName(e.target.value)} required />
-                      </div>
-                      <div style={{ position: 'relative' }} ref={stationRef}>
-                        <Shield size={18} style={iconStyle} />
-                        <input
-                          style={inputStyle}
-                          placeholder="Police station"
-                          value={station}
-                          onChange={e => {
-                            setStation(e.target.value);
-                            setShowStationDropdown(true);
-                          }}
-                          onFocus={() => setShowStationDropdown(true)}
-                          required
-                        />
-                        {showStationDropdown && station.trim() && (
-                          <div style={{
-                            position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 10,
-                            background: 'var(--ct-input-bg)', border: '1px solid var(--ct-glass-border)',
-                            borderRadius: 14, overflow: 'hidden', backdropFilter: 'blur(16px)',
-                            boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
-                          }}>
-                            {availableStations.filter(s => s.toLowerCase().includes(station.toLowerCase()) && s !== station).length > 0 ? (
-                              availableStations.filter(s => s.toLowerCase().includes(station.toLowerCase()) && s !== station).slice(0, 5).map((s, idx) => (
-                                <div
-                                  key={idx}
-                                  onClick={() => {
-                                    setStation(s);
-                                    setShowStationDropdown(false);
-                                  }}
-                                  style={{
-                                    padding: '12px 16px', cursor: 'pointer', color: 'var(--ct-text)', fontSize: 14,
-                                    borderBottom: idx < 4 ? '1px solid var(--ct-glass-border)' : 'none'
-                                  }}
-                                  onMouseEnter={e => e.target.style.background = 'rgba(255,255,255,0.1)'}
-                                  onMouseLeave={e => e.target.style.background = 'transparent'}
-                                >
-                                  {s}
+              ) : (
+                <>
+                  <form onSubmit={completingProfile ? handlePendingProfileSubmit : handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {(completingProfile || !isLogin) && (
+                      <>
+                        <div style={{ position: 'relative' }}>
+                          <User size={18} style={iconStyle} />
+                          <input style={inputStyle} placeholder="Officer full name" value={name} onChange={e => setName(e.target.value)} required />
+                        </div>
+                        <div style={{ position: 'relative' }} ref={stationRef}>
+                          <Shield size={18} style={iconStyle} />
+                          <input
+                            style={inputStyle}
+                            placeholder="Police station"
+                            value={station}
+                            onChange={e => {
+                              setStation(e.target.value);
+                              setShowStationDropdown(true);
+                            }}
+                            onFocus={() => setShowStationDropdown(true)}
+                            required
+                          />
+                          {showStationDropdown && station.trim() && (
+                            <div style={{
+                              position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 10,
+                              background: 'var(--ct-input-bg)', border: '1px solid var(--ct-glass-border)',
+                              borderRadius: 14, overflow: 'hidden', backdropFilter: 'blur(16px)',
+                              boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+                            }}>
+                              {availableStations.filter(s => s.toLowerCase().includes(station.toLowerCase()) && s !== station).length > 0 ? (
+                                availableStations.filter(s => s.toLowerCase().includes(station.toLowerCase()) && s !== station).slice(0, 5).map((s, idx) => (
+                                  <div
+                                    key={idx}
+                                    onClick={() => {
+                                      setStation(s);
+                                      setShowStationDropdown(false);
+                                    }}
+                                    style={{
+                                      padding: '12px 16px', cursor: 'pointer', color: 'var(--ct-text)', fontSize: 14,
+                                      borderBottom: idx < 4 ? '1px solid var(--ct-glass-border)' : 'none'
+                                    }}
+                                    onMouseEnter={e => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                    onMouseLeave={e => e.target.style.background = 'transparent'}
+                                  >
+                                    {s}
+                                  </div>
+                                ))
+                              ) : (
+                                <div style={{ padding: '12px 16px', color: 'var(--ct-muted)', fontSize: 13 }}>
+                                  Creating new station: "{station}"
                                 </div>
-                              ))
-                            ) : (
-                              <div style={{ padding: '12px 16px', color: 'var(--ct-muted)', fontSize: 13 }}>
-                                Creating new station: "{station}"
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        style={{ ...inputStyle, padding: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', textAlign: 'left' }}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                          {photo ? (
-                            <img src={photo} alt="Officer" style={{ width: 36, height: 36, borderRadius: 18, objectFit: 'cover' }} />
-                          ) : (
-                            <span style={{ width: 36, height: 36, borderRadius: 18, background: 'color-mix(in srgb, var(--ct-accent) 20%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <Camera size={17} color="var(--ct-accent)" />
-                            </span>
+                              )}
+                            </div>
                           )}
-                          <span style={{ color: photo ? 'var(--ct-text)' : 'var(--ct-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {photoBase64 ? 'Profile photo selected' : pendingUser?.photoURL ? 'Using Google photo' : 'Add profile photo'}
+                        </div>
+                        <button
+                          type="button"
+                          style={{ ...inputStyle, padding: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', textAlign: 'left' }}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                            {photo ? (
+                              <img src={photo} alt="Officer" style={{ width: 36, height: 36, borderRadius: 18, objectFit: 'cover' }} />
+                            ) : (
+                              <span style={{ width: 36, height: 36, borderRadius: 18, background: 'color-mix(in srgb, var(--ct-accent) 20%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Camera size={17} color="var(--ct-accent)" />
+                              </span>
+                            )}
+                            <span style={{ color: photo ? 'var(--ct-text)' : 'var(--ct-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {photoBase64 ? 'Profile photo selected' : pendingUser?.photoURL ? 'Using Google photo' : 'Add profile photo'}
+                            </span>
                           </span>
-                        </span>
-                      </button>
-                      <input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" style={{ display: 'none' }} />
-                    </>
-                  )}
+                        </button>
+                        <input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" style={{ display: 'none' }} />
+                      </>
+                    )}
+
+                    {!completingProfile && (
+                      <>
+                        <div style={{ position: 'relative' }}>
+                          <Mail size={18} style={iconStyle} />
+                          <input type="email" style={{ ...inputStyle, background: 'rgba(0,0,0,0.5)', border: '1px solid #10b981', color: '#10b981' }} placeholder="[ OFFICER EMAIL / BADGE ]" value={email} onChange={e => setEmail(e.target.value)} required />
+                        </div>
+                        <div style={{ position: 'relative' }}>
+                          <Lock size={18} style={iconStyle} />
+                          <input type="password" style={{ ...inputStyle, background: 'rgba(0,0,0,0.5)', border: '1px solid #10b981', color: '#10b981' }} placeholder="[ SECURITY CLEARANCE KEY ]" value={password} onChange={e => setPassword(e.target.value)} required />
+                        </div>
+                      </>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      style={{ width: '100%', padding: 16, background: '#10b981', border: 'none', color: '#000', fontSize: 16, fontWeight: 900, cursor: loading ? 'wait' : 'pointer', marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textTransform: 'uppercase', letterSpacing: '1px' }}
+                    >
+                      {loading ? 'AUTHENTICATING...' : completingProfile ? 'SAVE PROFILE DATA' : isLogin ? 'INITIALIZE SECURE LOGIN' : 'REQUEST CLEARANCE'}
+                    </button>
+                  </form>
 
                   {!completingProfile && (
                     <>
-                      <div style={{ position: 'relative' }}>
-                        <Mail size={18} style={iconStyle} />
-                        <input type="email" style={inputStyle} placeholder="Official email address" value={email} onChange={e => setEmail(e.target.value)} required />
+                      <div style={{ display: 'flex', alignItems: 'center', margin: '22px 0', gap: 12 }}>
+                        <div style={{ flex: 1, height: 1, background: 'rgba(16,185,129,0.3)' }} />
+                        <span style={{ fontSize: 12, color: '#10b981', fontWeight: 700 }}>OR</span>
+                        <div style={{ flex: 1, height: 1, background: 'rgba(16,185,129,0.3)' }} />
                       </div>
-                      <div style={{ position: 'relative' }}>
-                        <Lock size={18} style={iconStyle} />
-                        <input type="password" style={inputStyle} placeholder="Secure password" value={password} onChange={e => setPassword(e.target.value)} required />
+
+                      <button
+                        onClick={handleGoogleSignIn}
+                        disabled={loading}
+                        style={{ width: '100%', padding: 15, background: 'transparent', border: '1px solid #10b981', color: '#10b981', fontSize: 13, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, textTransform: 'uppercase' }}
+                      >
+                        [ OVERRIDE VIA GOOGLE BIOMETRICS ]
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={onDemo}
+                        disabled={loading}
+                        style={{ width: '100%', padding: 14, marginTop: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', color: '#ef4444', fontSize: 13, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, textTransform: 'uppercase' }}
+                      >
+                        <Eye size={17} />
+                        [ BYPASS: READ-ONLY DEMO MODE ]
+                      </button>
+                      <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: 10, lineHeight: 1.45, marginTop: 8, fontFamily: 'monospace' }}>
+                        WARNING: Demo mode is severely restricted. Write access locked.
+                      </div>
+
+                      <div style={{ textAlign: 'center', marginTop: 22 }}>
+                        <button
+                          onClick={() => {
+                            setIsLogin(!isLogin);
+                            setError('');
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          {isLogin ? '[ INITIATE NEW CLEARANCE ]' : '[ CANCEL CLEARANCE / BACK TO LOGIN ]'}
+                        </button>
+                      </div>
+
+                      {/* Privacy & License Footer */}
+                      <div style={{ marginTop: 28, padding: '14px 16px', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(16,185,129,0.2)', fontSize: 10, color: 'rgba(255,255,255,0.4)', lineHeight: 1.7, textAlign: 'center', fontFamily: 'monospace' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>RESTRICTED GOVERNMENT SYSTEM</div>
+                        <div>This terminal is for authorized law enforcement personnel only. All activities are logged and monitored. Unauthorized access is punishable by law.</div>
+                        <div style={{ marginTop: 6 }}>By authenticating, you agree to the{' '}
+                          <button onClick={() => setShowPolicy(true)} style={{ background: 'none', border: 'none', color: '#10b981', cursor: 'pointer', fontSize: 10, textDecoration: 'underline', padding: 0 }}>Security Protocol &amp; Terms</button>.
+                        </div>
                       </div>
                     </>
                   )}
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="squish-btn"
-                    style={{ width: '100%', padding: 16, background: 'var(--ct-accent)', border: 'none', borderRadius: 16, color: 'var(--ct-accent-fg)', fontSize: 16, fontWeight: 900, cursor: loading ? 'wait' : 'pointer', marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 12px 30px color-mix(in srgb, var(--ct-accent) 45%, transparent)' }}
-                  >
-                    {loading ? 'Please wait...' : completingProfile ? 'Save Officer Profile' : isLogin ? 'Secure Login' : 'Register Officer'}
-                    {!loading && <ChevronRight size={18} />}
-                  </button>
-                </form>
-
-                {!completingProfile && (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'center', margin: '22px 0', gap: 12 }}>
-                      <div style={{ flex: 1, height: 1, background: 'var(--ct-glass-border)' }} />
-                      <span style={{ fontSize: 12, color: 'var(--ct-muted)', fontWeight: 700 }}>OR</span>
-                      <div style={{ flex: 1, height: 1, background: 'var(--ct-glass-border)' }} />
-                    </div>
-
-                    <button
-                      onClick={handleGoogleSignIn}
-                      disabled={loading}
-                      className="squish-btn"
-                      style={{ width: '100%', padding: 15, background: '#fff', border: 'none', borderRadius: 16, color: '#111827', fontSize: 15, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                      </svg>
-                      Continue with Google
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={onDemo}
-                      disabled={loading}
-                      className="squish-btn"
-                      style={{ width: '100%', padding: 14, marginTop: 12, background: 'var(--ct-input-bg)', border: '1px solid var(--ct-glass-border)', borderRadius: 16, color: 'var(--ct-text)', fontSize: 14, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
-                    >
-                      <Eye size={17} />
-                      View demo app
-                    </button>
-                    <div style={{ textAlign: 'center', color: 'var(--ct-muted)', fontSize: 11, lineHeight: 1.45, marginTop: 8 }}>
-                      Demo opens sample records only. Add, edit, export, sync, and operations stay locked until officer login.
-                    </div>
-
-                    <div style={{ textAlign: 'center', marginTop: 22 }}>
-                      <button
-                        onClick={() => {
-                          setIsLogin(!isLogin);
-                          setError('');
-                        }}
-                        style={{ background: 'none', border: 'none', color: 'var(--ct-muted)', fontSize: 14, cursor: 'pointer', textDecoration: 'underline' }}
-                      >
-                        {isLogin ? 'Register a new officer account' : 'Already registered? Login'}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Privacy Policy Modal */}
+      {showPolicy && (
+        <div
+          onClick={() => setShowPolicy(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--ct-card)', borderRadius: 20, maxWidth: 520, width: '100%', maxHeight: '85vh', overflowY: 'auto', padding: 28, boxShadow: '0 32px 80px rgba(0,0,0,0.6)', border: '1px solid var(--ct-glass-border)' }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--ct-accent)', marginBottom: 4 }}> Privacy Policy &amp; Terms of Use</div>
+            <div style={{ fontSize: 11, color: 'var(--ct-muted)', marginBottom: 20 }}>C.A.S.E  Criminal Activity Surveillance Engine &nbsp;|&nbsp; Last updated: May 2025</div>
+
+            {[
+              {
+                title: '1. About This Application',
+                body: 'C.A.S.E is an independent, self-hosted law enforcement records management tool developed by GOAT\'ECH. It is NOT affiliated with, endorsed by, or operated by any government body, police department, or public authority. Use of this application is entirely at the discretion of the deploying organization.'
+              },
+              {
+                title: '2. Data Storage & Ownership',
+                body: 'All criminal records, officer profiles, and operational data entered into C.A.S.E are stored exclusively in YOUR OWN Firebase/Firestore database configured by your organization. GOAT\'ECH does not have access to, store, or process your records data. You are the sole data controller and owner.'
+              },
+              {
+                title: '3. Data Collection',
+                body: 'C.A.S.E collects: (a) Officer account information (name, email, police station, badge ID, profile photo) for authentication. (b) Criminal records added by officers. (c) App usage metadata for functionality (e.g. session tokens). No data is sold or shared with advertisers.'
+              },
+              {
+                title: '4. Authentication & Security',
+                body: 'Login is secured via Firebase Authentication (Google or email/password). Passwords are never stored in plaintext. Access requires a registered officer profile, and end-to-end encryption can be enabled in Settings.'
+              },
+              {
+                title: '5. Camera & Microphone Access',
+                body: 'C.A.S.E requests camera access for: (a) Face recognition during criminal record scanning. (b) Officer profile photo upload. Microphone access is used for voice-to-text search. These permissions are never used for surveillance of officers.'
+              },
+              {
+                title: '6. Operations Room & P2P',
+                body: 'The Secure Operations Room uses peer-to-peer (PeerJS) connections between officers. Messages and shared records are transmitted directly between connected devices. Conversation data is not stored on any server unless explicitly saved to your Firebase database.'
+              },
+              {
+                title: '7. Third-Party Services',
+                body: 'C.A.S.E uses: Firebase (Google) for authentication and database; PeerJS for P2P communication; Google Sheets (optional) for data export. Each service is governed by its own privacy policy. GOAT\'ECH is not responsible for third-party data practices.'
+              },
+              {
+                title: '8. Disclaimer of Liability',
+                body: 'C.A.S.E is provided "as is" without warranty. GOAT\'ECH is not liable for any misuse, data loss, unauthorized access, or legal consequences arising from the use of this application. Deploying organizations are solely responsible for compliance with local data protection laws (e.g. IT Act, GDPR, DPDP Act).'
+              },
+              {
+                title: '9. License',
+                body: 'C.A.S.E is proprietary software developed by GOAT\'ECH. Unauthorized redistribution, resale, or modification of this application is prohibited. Organizations granted access may deploy it internally for law enforcement record management purposes only.'
+              },
+              {
+                title: '10. Contact',
+                body: 'For privacy concerns, data requests, or legal inquiries, contact: goat.technology.maghs@gmail.com'
+              },
+            ].map(({ title, body }) => (
+              <div key={title} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)', marginBottom: 4 }}>{title}</div>
+                <div style={{ fontSize: 12, color: 'var(--ct-muted)', lineHeight: 1.75 }}>{body}</div>
+              </div>
+            ))}
+
+            <button
+              onClick={() => setShowPolicy(false)}
+              style={{ width: '100%', padding: 14, marginTop: 8, background: 'var(--ct-accent)', border: 'none', borderRadius: 14, color: 'var(--ct-accent-fg)', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}
+            >
+              I Understand  Close
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

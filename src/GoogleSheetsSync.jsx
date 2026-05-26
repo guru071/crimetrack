@@ -317,7 +317,7 @@ export default function GoogleSheetsSync({ isOpen, onClose, isAuthenticated, aut
                 onClick={() => setPreviewExpanded(!previewExpanded)}
               >
                 <span>Preview ({recordCount} records)</span>
-                <span style={{ transform: previewExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▼</span>
+                <span style={{ transform: previewExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}></span>
               </button>
               {previewExpanded && (
                 <div style={{ ...css.card, marginTop: 8, fontSize: 11, color: T.muted, maxHeight: 150, overflow: "auto" }}>
@@ -326,8 +326,8 @@ export default function GoogleSheetsSync({ isOpen, onClose, isAuthenticated, aut
                   </div>
                   <div style={{ fontSize: 10, lineHeight: 1.6 }}>
                     {syncMode === "replace"
-                      ? "⚠️ This will replace all data in your Google Sheet with the local database."
-                      : "✓ New records will be appended to your existing Google Sheet."}
+                      ? " This will replace all data in your Google Sheet with the local database."
+                      : " New records will be appended to your existing Google Sheet."}
                   </div>
                 </div>
               )}

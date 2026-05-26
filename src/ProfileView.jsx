@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
-import { User, Shield, LogOut, Edit2, Check, X, Camera, Trash2 } from 'lucide-react';
+import { User, Shield, LogOut, Edit2, Check, X, Camera, Trash2, Info } from 'lucide-react';
 import { db, auth, signOut, doc, getDoc, setDoc, deleteDoc, deleteUser } from './firebase';
+
 
 export default function ProfileView({ currentUser, onLogout, SettingsComponent }) {
   const [profile, setProfile] = useState(() => {
@@ -12,6 +13,8 @@ export default function ProfileView({ currentUser, onLogout, SettingsComponent }
   const [editStation, setEditStation] = useState("");
   const [editPhotoBase64, setEditPhotoBase64] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [showImage, setShowImage] = useState(false);
+
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -46,16 +49,16 @@ export default function ProfileView({ currentUser, onLogout, SettingsComponent }
       localStorage.removeItem("crimetrack_settings");
       localStorage.removeItem("my_operations_history");
       for (let i = 0; i < localStorage.length; i++) {
-         const key = localStorage.key(i);
-         if (key && key.startsWith('pending_msgs_')) {
-            localStorage.removeItem(key);
-         }
+        const key = localStorage.key(i);
+        if (key && key.startsWith('pending_msgs_')) {
+          localStorage.removeItem(key);
+        }
       }
 
       if (auth && auth.currentUser) {
         await deleteUser(auth.currentUser);
       }
-      
+
       onLogout();
     } catch (err) {
       console.error("Failed to delete account:", err);
@@ -141,7 +144,7 @@ export default function ProfileView({ currentUser, onLogout, SettingsComponent }
 
       <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 24, padding: 24, border: "1px solid rgba(255,255,255,0.1)", display: "flex", gap: 24, alignItems: "center", marginBottom: 24, position: "relative", overflow: "hidden" }}>
 
-        <div style={{ width: 80, height: 80, borderRadius: 40, background: "rgba(255,255,255,0.1)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, position: "relative", cursor: isEditing ? "pointer" : "default" }} onClick={() => isEditing && fileInputRef.current?.click()}>
+        <div style={{ width: 80, height: 80, borderRadius: 40, background: "rgba(255,255,255,0.1)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, position: "relative", cursor: "pointer" }} onClick={() => isEditing ? fileInputRef.current?.click() : (displayPhoto && setShowImage(true))}>
           {displayPhoto ? (
             <img src={displayPhoto} alt="Officer" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: isEditing ? 0.7 : 1 }} />
           ) : (
@@ -204,7 +207,24 @@ export default function ProfileView({ currentUser, onLogout, SettingsComponent }
       {/* Embedded Settings */}
       {SettingsComponent}
 
-      <div style={{ marginTop: 32, padding: 24, background: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: 16 }}>
+      {/* About Page Link */}
+      <button
+        onClick={() => window.open("https://goatech.tech", "_blank")}
+        style={{ width: "100%", marginTop: 24, padding: "16px", background: "var(--ct-card)", border: "1px solid var(--ct-glass-border)", borderRadius: 12, color: "var(--ct-accent)", fontWeight: "bold", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+      >
+        <Info size={18} /> About GOAT'ECH
+      </button>
+
+      {/* Documentation Link */}
+      <button
+        onClick={() => window.open("/docs.html", "_blank")}
+        style={{ width: "100%", marginTop: 12, padding: "16px", background: "var(--ct-card)", border: "1px solid var(--ct-glass-border)", borderRadius: 12, color: "var(--ct-accent)", fontWeight: "bold", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+      >
+        📖 User Manual & Documentation
+      </button>
+
+      {/* Danger Zone */}
+      <div style={{ marginTop: 24, padding: 24, background: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: 16 }}>
         <div style={{ color: "#ef4444", fontWeight: "bold", fontSize: 16, marginBottom: 8 }}>Danger Zone</div>
         <div style={{ color: "var(--ct-muted)", fontSize: 13, marginBottom: 16 }}>
           Permanently delete your account, personal data, and clear all operations history on this device.
@@ -213,6 +233,22 @@ export default function ProfileView({ currentUser, onLogout, SettingsComponent }
           <Trash2 size={16} /> Delete My Account
         </button>
       </div>
+
+      {/* Full Screen Image Modal */}
+      {showImage && displayPhoto && (
+        <div
+          onClick={() => setShowImage(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+        >
+          <img src={displayPhoto} alt="Full Screen Profile" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 16 }} />
+          <button
+            onClick={() => setShowImage(false)}
+            style={{ position: "absolute", top: 24, right: 24, background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", padding: 12, borderRadius: "50%", cursor: "pointer" }}
+          >
+            <X size={24} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

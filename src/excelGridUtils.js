@@ -1,4 +1,4 @@
-/** Column index → Excel letter (A, B, … Z, AA) */
+/** Column index  Excel letter (A, B,  Z, AA) */
 export function colToLetter(col) {
   let s = "";
   let n = col + 1;
@@ -14,7 +14,7 @@ export function cellAddress(row, col) {
   return `${colToLetter(col)}${row + 1}`;
 }
 
-const norm = (v) => String(v ?? "").trim().toLowerCase();
+const norm = (v) => String(v || "").trim().toLowerCase();
 
 export const DUPLICATE_KEYS = [
   { id: "name", label: "Name", fn: (r) => norm(r.name) },
@@ -61,8 +61,8 @@ export function removeDuplicates(rows, keyId, keep = "first") {
 export function sortRows(rows, colKey, dir = "asc") {
   const mult = dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
-    const va = a[colKey] ?? "";
-    const vb = b[colKey] ?? "";
+    const va = a[colKey] || "";
+    const vb = b[colKey] || "";
     const na = Number(va);
     const nb = Number(vb);
     if (!Number.isNaN(na) && !Number.isNaN(nb) && String(va).trim() !== "" && String(vb).trim() !== "") {
@@ -74,7 +74,7 @@ export function sortRows(rows, colKey, dir = "asc") {
 
 export function rowsToTsv(rows, keys) {
   const header = keys.join("\t");
-  const body = rows.map((r) => keys.map((k) => String(r[k] ?? "").replace(/\t/g, " ").replace(/\n/g, " ")).join("\t"));
+  const body = rows.map((r) => keys.map((k) => String(r[k] || "").replace(/\t/g, " ").replace(/\n/g, " ")).join("\t"));
   return [header, ...body].join("\n");
 }
 
@@ -98,5 +98,5 @@ export function filterRows(rows, query) {
   if (!q) return rows.map((r, i) => ({ row: r, index: i }));
   return rows
     .map((r, i) => ({ row: r, index: i }))
-    .filter(({ row }) => Object.values(row).some((v) => String(v ?? "").toLowerCase().includes(q)));
+    .filter(({ row }) => Object.values(row).some((v) => String(v || "").toLowerCase().includes(q)));
 }

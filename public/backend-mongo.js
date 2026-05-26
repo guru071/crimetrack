@@ -56,10 +56,10 @@ app.post('/api/records', async (req, res) => {
   try {
     const records = req.body.records;
     if (!Array.isArray(records)) return res.status(400).json({ error: 'Body must contain records array' });
-    
+
     const collection = db.collection(collectionName);
     await collection.deleteMany({});
-    
+
     if (records.length > 0) {
       await collection.insertMany(records);
     }
@@ -73,7 +73,7 @@ app.post('/api/logs', async (req, res) => {
   try {
     const payload = req.body.payload;
     if (!payload) return res.status(400).json({ error: 'Missing log payload' });
-    
+
     await db.collection(logsCollectionName).insertOne({
       timestamp: payload.timestamp,
       officerId: payload.officerId,

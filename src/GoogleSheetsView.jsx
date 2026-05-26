@@ -347,15 +347,15 @@ export default function GoogleSheetsView({ sheetsData, isLoading, lastSyncTime, 
                         />
                       </td>
                       <td style={{ cursor: "pointer", ...css.td }} onClick={() => toggleRowExpand(record.id)}>
-                        <strong>{record.name || "—"}</strong>
+                        <strong>{record.name || ""}</strong>
                       </td>
                       <td style={css.td}>
                         <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, background: T.card, color: T.accent }}>
-                          {record.status || "—"}
+                          {record.status || ""}
                         </span>
                       </td>
-                      <td style={css.td}>{record.policeStation || "—"}</td>
-                      <td style={css.td}>{record.hsNo || "—"}</td>
+                      <td style={css.td}>{record.policeStation || ""}</td>
+                      <td style={css.td}>{record.hsNo || ""}</td>
                       <td style={css.td}>
                         <button
                           style={{ background: "none", border: "none", cursor: "pointer", color: T.accent }}

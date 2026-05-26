@@ -142,7 +142,7 @@ export async function pushToGoogleSheets(settings, records) {
 export async function fetchFromDatabase(settings) {
   const base = (settings.dbApiUrl || "").trim().replace(/\/$/, "");
   if (!base) throw new Error("Configure Database API URL in Settings");
-  
+
   const headers = { Accept: "application/json" };
   if (settings.apiSecret) headers["x-api-secret"] = settings.apiSecret;
 

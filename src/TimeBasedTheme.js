@@ -7,36 +7,129 @@ const GLASS = {
   textShadow: 'none',
 };
 
-const SUNRISE_THEME = {
-  period: 'sunrise',
-  label: 'Pro',
-  gradient: 'linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)',
-  bgColor: '#f8fafc',
-  surfaceColor: '#ffffff',
-  cardColor: '#ffffff',
-  inputBg: '#ffffff',
-  headerBg: 'rgba(255, 255, 255, 0.96)',
-  navBg: 'rgba(255, 255, 255, 0.98)',
-  glassBg: '#ffffff',
-  glassBorder: '#d7dee8',
-  orbA: 'transparent',
-  orbB: 'transparent',
-  text: '#0f172a',
-  muted: '#475569',
-  secondaryText: '#334155',
-  accentColor: '#f59e0b',
-  accentLight: '#fbbf24',
-  accentFg: '#111827',
-  border: '#d7dee8',
-  borderM: '#f59e0b',
-  red: '#dc2626',
-  green: '#059669',
-  blue: '#2563eb',
-  purple: '#7c3aed',
-  ...GLASS,
+export const THEMES = {
+  ghost: {
+    id: 'ghost',
+    period: 'ghost',
+    label: 'Ghost Protocol',
+    gradient: 'linear-gradient(135deg, #09090b 0%, #030712 100%)',
+    bgColor: '#030712',
+    surfaceColor: '#09090b',
+    cardColor: '#09090b',
+    inputBg: '#09090b',
+    headerBg: 'rgba(9, 9, 11, 0.95)',
+    navBg: 'rgba(9, 9, 11, 0.98)',
+    glassBg: 'rgba(9, 9, 11, 0.6)',
+    glassBorder: '#00f0ff',
+    orbA: 'rgba(0, 240, 255, 0.15)',
+    orbB: 'rgba(0, 255, 170, 0.1)',
+    text: '#00f0ff',
+    muted: '#4b5563',
+    secondaryText: '#00ffaa',
+    accentColor: '#00f0ff',
+    accentLight: '#00ffaa',
+    accentFg: '#000000',
+    border: 'rgba(0, 240, 255, 0.3)',
+    borderM: '#00f0ff',
+    red: '#ff003c',
+    green: '#00ffaa',
+    blue: '#00f0ff',
+    purple: '#a855f7',
+    ...GLASS,
+  },
+  dark: {
+    id: 'dark',
+    period: 'dark',
+    label: 'Midnight Dark',
+    gradient: 'linear-gradient(180deg, #0f172a 0%, #020617 100%)',
+    bgColor: '#020617',
+    surfaceColor: '#0f172a',
+    cardColor: '#1e293b',
+    inputBg: '#1e293b',
+    headerBg: 'rgba(15, 23, 42, 0.96)',
+    navBg: 'rgba(15, 23, 42, 0.98)',
+    glassBg: '#1e293b',
+    glassBorder: '#334155',
+    orbA: 'transparent',
+    orbB: 'transparent',
+    text: '#f8fafc',
+    muted: '#94a3b8',
+    secondaryText: '#cbd5e1',
+    accentColor: '#3b82f6',
+    accentLight: '#60a5fa',
+    accentFg: '#ffffff',
+    border: '#334155',
+    borderM: '#3b82f6',
+    red: '#ef4444',
+    green: '#10b981',
+    blue: '#3b82f6',
+    purple: '#8b5cf6',
+    ...GLASS,
+  },
+  oled: {
+    id: 'oled',
+    period: 'oled',
+    label: 'AMOLED Black',
+    gradient: 'none',
+    bgColor: '#000000',
+    surfaceColor: '#09090b',
+    cardColor: '#000000',
+    inputBg: '#09090b',
+    headerBg: 'rgba(0, 0, 0, 0.96)',
+    navBg: 'rgba(0, 0, 0, 0.98)',
+    glassBg: '#000000',
+    glassBorder: '#27272a',
+    orbA: 'transparent',
+    orbB: 'transparent',
+    text: '#ffffff',
+    muted: '#a1a1aa',
+    secondaryText: '#d4d4d8',
+    accentColor: '#f43f5e',
+    accentLight: '#fb7185',
+    accentFg: '#ffffff',
+    border: '#27272a',
+    borderM: '#f43f5e',
+    red: '#f43f5e',
+    green: '#10b981',
+    blue: '#3b82f6',
+    purple: '#a855f7',
+    ...GLASS,
+  },
+  cyberpunk: {
+    id: 'cyberpunk',
+    period: 'cyberpunk',
+    label: 'Cyberpunk',
+    gradient: 'linear-gradient(135deg, #2e021d 0%, #0d0221 100%)',
+    bgColor: '#0d0221',
+    surfaceColor: '#1a052b',
+    cardColor: '#2e021d',
+    inputBg: '#1a052b',
+    headerBg: 'rgba(13, 2, 33, 0.96)',
+    navBg: 'rgba(13, 2, 33, 0.98)',
+    glassBg: 'rgba(46, 2, 29, 0.7)',
+    glassBorder: '#ff003c',
+    orbA: 'rgba(255, 0, 60, 0.2)',
+    orbB: 'rgba(0, 240, 255, 0.2)',
+    text: '#00f0ff',
+    muted: '#fce205',
+    secondaryText: '#ff003c',
+    accentColor: '#ff003c',
+    accentLight: '#ff4d79',
+    accentFg: '#ffffff',
+    border: '#ff003c',
+    borderM: '#00f0ff',
+    red: '#ff003c',
+    green: '#00ff00',
+    blue: '#00f0ff',
+    purple: '#b026ff',
+    ...GLASS,
+  }
 };
 
-export const getTimeBasedTheme = () => ({ ...SUNRISE_THEME });
+export const getSelectedTheme = () => {
+  const saved = localStorage.getItem('crimetrack_theme') || 'ghost';
+  return THEMES[saved] || THEMES.ghost;
+};
 
 export const themeToCssVars = (theme) => ({
   '--ct-bg': theme.bgColor,
@@ -69,10 +162,12 @@ export const themeToCssVars = (theme) => ({
 });
 
 export const useTimeBasedTheme = () => {
-  const [theme, setTheme] = useState(getTimeBasedTheme());
+  const [theme, setTheme] = useState(getSelectedTheme());
 
   useEffect(() => {
-    setTheme(getTimeBasedTheme());
+    const handleStorageChange = () => setTheme(getSelectedTheme());
+    window.addEventListener('themeChanged', handleStorageChange);
+    return () => window.removeEventListener('themeChanged', handleStorageChange);
   }, []);
 
   return theme;

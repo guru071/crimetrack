@@ -30,7 +30,7 @@ async function initDatabase() {
     await connection.end();
 
     pool = mysql.createPool(dbConfig);
-    
+
     // Dynamic Schema for E2E Encryption support
     console.log("Ensuring 'records' table exists...");
     await pool.query(`
@@ -85,7 +85,7 @@ app.post('/api/records', async (req, res) => {
   try {
     const records = req.body.records;
     if (!Array.isArray(records)) return res.status(400).json({ error: 'Body must contain records array' });
-    
+
     await pool.query('TRUNCATE TABLE records');
     if (records.length === 0) return res.json({ success: true, message: 'Database cleared' });
 
@@ -102,7 +102,7 @@ app.post('/api/logs', async (req, res) => {
   try {
     const payload = req.body.payload;
     if (!payload) return res.status(400).json({ error: 'Missing log payload' });
-    
+
     await pool.query('INSERT INTO logs (timestamp, officerId, officerName, station, event, details) VALUES (?, ?, ?, ?, ?, ?)', [
       payload.timestamp, payload.officerId, payload.officerName || '', payload.station || '', payload.event, payload.details
     ]);

@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
-import { X, Camera } from 'lucide-react';
+import { X, Camera, Zap, CheckCircle2, ScanFace, Upload, Sparkles, BrainCircuit } from 'lucide-react';
+import { resizeImageFile } from './imageUtils';
 
 export default function FaceScannerModal({ records, getHumanModel, onMatch, onClose }) {
   const videoRef = useRef(null);
@@ -11,6 +12,71 @@ export default function FaceScannerModal({ records, getHumanModel, onMatch, onCl
   useEffect(() => {
     let captured = false;
     let streamRef = null;
+
+    const handlePhotoUpload = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      // Stop camera if running
+      if (scanLoopRef.current) cancelAnimationFrame(scanLoopRef.current);
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      }
+
+      const resizedBase64 = await resizeImageFile(file, 800);
+      if (!resizedBase64) {
+        setStatus('Error resizing image');
+        return;
+      }
+
+      try {
+        const human = await getHumanModel();
+        const img = new Image();
+        img.src = resizedBase64;
+        await new Promise((r) => { img.onload = r; img.onerror = r; });
+        
+        setStatus('Analyzing...');
+        const res = await human.detect(img);
+        
+        if (res.face && res.face.length === 1 && res.face[0].embedding) {
+          const queryEmbedding = res.face[0].embedding;
+          let bestMatch = null;
+          let bestSimilarity = 0;
+
+          for (const record of records) {
+            if (record.faceDescriptor) {
+              let dotProduct = 0;
+              let normA = 0;
+              let normB = 0;
+              const a = queryEmbedding;
+              const b = record.faceDescriptor;
+              for (let i = 0; i < a.length; i++) {
+                dotProduct += a[i] * b[i];
+                normA += a[i] * a[i];
+                normB += b[i] * b[i];
+              }
+              const sim = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+              if (sim > bestSimilarity) {
+                bestSimilarity = sim;
+                bestMatch = record;
+              }
+            }
+          }
+
+          if (bestSimilarity >= 0.60 && bestMatch) {
+            setStatus(`Match Found: ${bestMatch.name}`);
+            setTimeout(() => onMatch(bestMatch), 500);
+          } else {
+            setStatus("No match found in uploaded photo.");
+          }
+        } else {
+          setStatus("No face detected in photo.");
+        }
+      } catch (err) {
+        console.error("Error processing uploaded photo", err);
+        setStatus('Error processing photo');
+      }
+    };
 
     const startCamera = async () => {
       try {

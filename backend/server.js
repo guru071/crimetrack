@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -8,16 +11,15 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const DRIVE_UPLOAD_MODE = 'Apps Script or OAuth is recommended; service-account Drive uploads require Shared Drive or delegated access.';
 
-// Middleware
 app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
 
-// Initialize Google Sheets Handler
 let sheetsHandler = null;
 
-const initializeSheetsHandler = () => {
+function getSheetsHandler() {
   if (!sheetsHandler) {
     sheetsHandler = new GoogleSheetsHandler(
       process.env.GOOGLE_CLIENT_ID,
@@ -26,412 +28,138 @@ const initializeSheetsHandler = () => {
     );
   }
   return sheetsHandler;
-};
+}
 
-// ===== OAuth Endpoints =====
+function asyncRoute(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
 
-/**
- * GET /api/sheets/auth/url - Get OAuth authorization URL
- */
-app.get('/api/sheets/auth/url', (req, res) => {
-  try {
-    const handler = initializeSheetsHandler();
-    const authUrl = handler.getAuthorizationUrl();
-    res.json({
-      success: true,
-      authUrl,
-      message: 'Visit this URL to authorize the application',
-    });
-  } catch (error) {
-    console.error('Error generating auth URL:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
+function missing(fields, body) {
+  return fields.filter(field => body[field] === undefined || body[field] === null || body[field] === '');
+}
 
-/**
- * POST /api/sheets/auth/callback - OAuth callback handler
- */
-app.post('/api/sheets/auth/callback', async (req, res) => {
-  try {
-    const { code } = req.body;
-
-    if (!code) {
-      return res.status(400).json({
-        success: false,
-        error: 'Authorization code is required',
-      });
-    }
-
-    const handler = initializeSheetsHandler();
-    const result = await handler.handleCallback(code);
-
-    res.json({
-      success: true,
-      message: result.message,
-    });
-  } catch (error) {
-    console.error('Error in auth callback:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * GET /api/sheets/auth/status - Check authentication status
- */
-app.get('/api/sheets/auth/status', (req, res) => {
-  try {
-    const handler = initializeSheetsHandler();
-    const authenticated = handler.isAuthenticated();
-
-    res.json({
-      success: true,
-      authenticated,
-      message: authenticated ? 'Authenticated' : 'Not authenticated',
-    });
-  } catch (error) {
-    console.error('Error checking auth status:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// ===== Sheets Data Endpoints =====
-
-/**
- * POST /api/sheets/sync - Push local records to Sheets
- * Body: { spreadsheetId, range, records }
- */
-app.post('/api/sheets/sync', async (req, res) => {
-  try {
-    const { spreadsheetId, range, records } = req.body;
-
-    if (!spreadsheetId || !range || !records) {
-      return res.status(400).json({
-        success: false,
-        error: 'spreadsheetId, range, and records are required',
-      });
-    }
-
-    const handler = initializeSheetsHandler();
-    const result = await handler.syncToSheet(spreadsheetId, range, records);
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error syncing to sheet:', error);
-    const statusCode = error.message.includes('Quota') ? 429 : 500;
-    res.status(statusCode).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * GET /api/sheets/fetch - Pull data from Sheets
- * Query: spreadsheetId, range
- */
-app.get('/api/sheets/fetch', async (req, res) => {
-  try {
-    const { spreadsheetId, range } = req.query;
-
-    if (!spreadsheetId || !range) {
-      return res.status(400).json({
-        success: false,
-        error: 'spreadsheetId and range query parameters are required',
-      });
-    }
-
-    const handler = initializeSheetsHandler();
-    const result = await handler.readFromSheet(spreadsheetId, range);
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error fetching from sheet:', error);
-    const statusCode = error.message.includes('Quota') ? 429 : 500;
-    res.status(statusCode).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * POST /api/sheets/import - Import from Sheets to local
- * Body: { spreadsheetId, range }
- */
-app.post('/api/sheets/import', async (req, res) => {
-  try {
-    const { spreadsheetId, range } = req.body;
-
-    if (!spreadsheetId || !range) {
-      return res.status(400).json({
-        success: false,
-        error: 'spreadsheetId and range are required',
-      });
-    }
-
-    const handler = initializeSheetsHandler();
-    const result = await handler.importFromSheet(spreadsheetId, range);
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error importing from sheet:', error);
-    const statusCode = error.message.includes('Quota') ? 429 : 500;
-    res.status(statusCode).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * POST /api/sheets/two-way-sync - Two-way sync between local and Sheets
- * Body: { spreadsheetId, range, localRecords }
- */
-app.post('/api/sheets/two-way-sync', async (req, res) => {
-  try {
-    const { spreadsheetId, range, localRecords } = req.body;
-
-    if (!spreadsheetId || !range || !localRecords) {
-      return res.status(400).json({
-        success: false,
-        error: 'spreadsheetId, range, and localRecords are required',
-      });
-    }
-
-    const handler = initializeSheetsHandler();
-    const result = await handler.twoWaySync(
-      spreadsheetId,
-      range,
-      localRecords
-    );
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error in two-way sync:', error);
-    const statusCode = error.message.includes('Quota') ? 429 : 500;
-    res.status(statusCode).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// ===== Google Drive Endpoints =====
-
-/**
- * POST /api/sheets/upload-image - Upload image to Google Drive
- * Body: { base64Data, fileName, mimeType, folderId (optional) }
- */
-app.post('/api/sheets/upload-image', async (req, res) => {
-  try {
-    const { base64Data, fileName, mimeType = 'image/jpeg', folderId } =
-      req.body;
-
-    if (!base64Data || !fileName) {
-      return res.status(400).json({
-        success: false,
-        error: 'base64Data and fileName are required',
-      });
-    }
-
-    // Create temporary file from base64
-    const buffer = Buffer.from(base64Data, 'base64');
-    
-    // Note: Writing to project temp directory instead of /tmp
-    const fs = await import('fs');
-    const path = await import('path');
-    const projectTempDir = path.join(process.cwd(), '.temp-uploads');
-
-    // Create temp directory if it doesn't exist
-    if (!fs.existsSync(projectTempDir)) {
-      fs.mkdirSync(projectTempDir, { recursive: true });
-    }
-
-    const tempFilePath2 = path.join(projectTempDir, `${Date.now()}-${fileName}`);
-    fs.writeFileSync(tempFilePath2, buffer);
-
-    try {
-      const result = await uploadImageToDriveUsingServiceAccount(
-        tempFilePath2,
-        fileName,
-        mimeType,
-        folderId
-      );
-
-      // Clean up temp file
-      if (fs.existsSync(tempFilePath2)) {
-        fs.unlinkSync(tempFilePath2);
-      }
-
-      res.json(result);
-    } catch (uploadError) {
-      // Clean up temp file on error
-      if (fs.existsSync(tempFilePath2)) {
-        fs.unlinkSync(tempFilePath2);
-      }
-      throw uploadError;
-    }
-  } catch (error) {
-    console.error('Error uploading image:', error);
-    const statusCode = error?.message?.includes('Quota') ? 429 : 500;
-    res.status(statusCode).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * POST /api/sheets/delete-image - Delete image from Google Drive
- * Body: { fileId }
- */
-app.post('/api/sheets/delete-image', async (req, res) => {
-  try {
-    const { fileId } = req.body;
-
-    if (!fileId) {
-      return res.status(400).json({
-        success: false,
-        error: 'fileId is required',
-      });
-    }
-
-    const handler = initializeSheetsHandler();
-    const result = await handler.deleteFileFromDrive(fileId);
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error deleting image:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// ===== Utility Endpoints =====
-
-/**
- * GET /api/sheets/info - Get spreadsheet metadata
- * Query: spreadsheetId
- */
-app.get('/api/sheets/info', async (req, res) => {
-  try {
-    const { spreadsheetId } = req.query;
-
-    if (!spreadsheetId) {
-      return res.status(400).json({
-        success: false,
-        error: 'spreadsheetId query parameter is required',
-      });
-    }
-
-    const handler = initializeSheetsHandler();
-    const result = await handler.getSpreadsheetInfo(spreadsheetId);
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error getting sheet info:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * GET /api/health - Health check endpoint
- */
-app.get('/api/health', (req, res) => {
-  res.json({
+function healthPayload() {
+  const handler = getSheetsHandler();
+  return {
     success: true,
     message: 'Google Sheets API server is running',
-    port: PORT,
-    driveUploadMode: 'OAuth or Apps Script recommended; service accounts need Shared Drive/domain delegation for Drive uploads',
-  });
+    port: Number(PORT),
+    oauthConfigured: handler.configured,
+    oauthAuthenticated: handler.isAuthenticated(),
+    driveUploadMode: DRIVE_UPLOAD_MODE,
+  };
+}
+
+app.get('/api/health', (req, res) => {
+  res.json(healthPayload());
 });
 
 app.get('/api/sheets/health', (req, res) => {
+  res.json(healthPayload());
+});
+
+app.get('/api/sheets/auth/url', (req, res, next) => {
+  try {
+    res.json({ success: true, authUrl: getSheetsHandler().getAuthorizationUrl() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/sheets/auth/callback', asyncRoute(async (req, res) => {
+  const required = missing(['code'], req.body);
+  if (required.length) return res.status(400).json({ success: false, error: `Missing required field: ${required.join(', ')}` });
+  res.json(await getSheetsHandler().handleCallback(req.body.code));
+}));
+
+app.get('/api/sheets/auth/status', (req, res) => {
+  const handler = getSheetsHandler();
   res.json({
     success: true,
-    message: 'Google Sheets API server is running',
-    port: PORT,
-    driveUploadMode: 'OAuth or Apps Script recommended; service accounts need Shared Drive/domain delegation for Drive uploads',
+    configured: handler.configured,
+    authenticated: handler.isAuthenticated(),
   });
 });
 
-// ===== Error Handling =====
+app.post('/api/sheets/sync', asyncRoute(async (req, res) => {
+  const required = missing(['spreadsheetId', 'range', 'records'], req.body);
+  if (required.length) return res.status(400).json({ success: false, error: `Missing required field: ${required.join(', ')}` });
+  if (!Array.isArray(req.body.records)) return res.status(400).json({ success: false, error: 'records must be an array' });
+  res.json(await getSheetsHandler().syncToSheet(req.body.spreadsheetId, req.body.range, req.body.records));
+}));
 
-/**
- * 404 handler
- */
+app.get('/api/sheets/fetch', asyncRoute(async (req, res) => {
+  const required = missing(['spreadsheetId', 'range'], req.query);
+  if (required.length) return res.status(400).json({ success: false, error: `Missing required query parameter: ${required.join(', ')}` });
+  res.json(await getSheetsHandler().readFromSheet(req.query.spreadsheetId, req.query.range));
+}));
+
+app.post('/api/sheets/import', asyncRoute(async (req, res) => {
+  const required = missing(['spreadsheetId', 'range'], req.body);
+  if (required.length) return res.status(400).json({ success: false, error: `Missing required field: ${required.join(', ')}` });
+  res.json(await getSheetsHandler().importFromSheet(req.body.spreadsheetId, req.body.range));
+}));
+
+app.post('/api/sheets/two-way-sync', asyncRoute(async (req, res) => {
+  const required = missing(['spreadsheetId', 'range', 'localRecords'], req.body);
+  if (required.length) return res.status(400).json({ success: false, error: `Missing required field: ${required.join(', ')}` });
+  if (!Array.isArray(req.body.localRecords)) return res.status(400).json({ success: false, error: 'localRecords must be an array' });
+  res.json(await getSheetsHandler().twoWaySync(req.body.spreadsheetId, req.body.range, req.body.localRecords));
+}));
+
+app.post('/api/sheets/upload-image', asyncRoute(async (req, res) => {
+  const required = missing(['base64Data', 'fileName'], req.body);
+  if (required.length) return res.status(400).json({ success: false, error: `Missing required field: ${required.join(', ')}` });
+
+  const tempDir = path.join(process.cwd(), '.temp-uploads');
+  fs.mkdirSync(tempDir, { recursive: true });
+  const safeName = String(req.body.fileName).replace(/[^a-z0-9_.-]/gi, '_');
+  const tempPath = path.join(tempDir, `${Date.now()}-${safeName}`);
+
+  try {
+    fs.writeFileSync(tempPath, Buffer.from(req.body.base64Data, 'base64'));
+    res.json(await uploadImageToDriveUsingServiceAccount(
+      tempPath,
+      safeName,
+      req.body.mimeType || 'image/jpeg',
+      req.body.folderId
+    ));
+  } finally {
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+  }
+}));
+
+app.post('/api/sheets/delete-image', asyncRoute(async (req, res) => {
+  const required = missing(['fileId'], req.body);
+  if (required.length) return res.status(400).json({ success: false, error: `Missing required field: ${required.join(', ')}` });
+  res.json(await getSheetsHandler().deleteFileFromDrive(req.body.fileId));
+}));
+
+app.get('/api/sheets/info', asyncRoute(async (req, res) => {
+  const required = missing(['spreadsheetId'], req.query);
+  if (required.length) return res.status(400).json({ success: false, error: `Missing required query parameter: ${required.join(', ')}` });
+  res.json(await getSheetsHandler().getSpreadsheetInfo(req.query.spreadsheetId));
+}));
+
 app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Endpoint not found',
-    path: req.path,
-  });
+  res.status(404).json({ success: false, error: 'Endpoint not found', path: req.path });
 });
 
-/**
- * Global error handler
- */
-app.use((err, req, res) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({
-    success: false,
-    error: err.message || 'Internal server error',
-  });
+app.use((error, req, res, next) => {
+  void req;
+  void next;
+  const message = error?.message || 'Internal server error';
+  const status = /not configured|not authenticated/i.test(message) ? 503 : /quota/i.test(message) ? 429 : 500;
+  res.status(status).json({ success: false, error: message });
 });
 
-// ===== Start Server =====
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
-const startServer = () => {
+if (isDirectRun) {
   app.listen(PORT, () => {
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`🚀 Google Sheets API Server Running on Port ${PORT}`);
-    console.log(`${'='.repeat(60)}`);
-    console.log(`\n📋 Available Endpoints:`);
-    console.log(`  Auth:`);
-    console.log(`    GET  /api/sheets/auth/url`);
-    console.log(`    POST /api/sheets/auth/callback`);
-    console.log(`    GET  /api/sheets/auth/status`);
-    console.log(`\n  Sheets Data:`);
-    console.log(`    POST /api/sheets/sync`);
-    console.log(`    GET  /api/sheets/fetch`);
-    console.log(`    POST /api/sheets/import`);
-    console.log(`    POST /api/sheets/two-way-sync`);
-    console.log(`\n  Google Drive:`);
-    console.log(`    POST /api/sheets/upload-image`);
-    console.log(`    POST /api/sheets/delete-image`);
-    console.log(`\n  Utility:`);
-    console.log(`    GET  /api/sheets/info`);
-    console.log(`    GET  /api/health`);
-    console.log(`\n${'='.repeat(60)}\n`);
+    console.log(`Google Sheets API server running on http://localhost:${PORT}`);
+    console.log('Health: /api/health and /api/sheets/health');
   });
-};
-
-// Handle graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\n\nShutting down server gracefully...');
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  console.log('\n\nTerminating server...');
-  process.exit(0);
-});
-
-// Start the server
-startServer();
+}
 
 export default app;

@@ -94,7 +94,7 @@ export default function DataSourcePanel({
         }}
       >
         {isLoading ? <Loader size={18} className="spin" /> : null}
-        {isLoading ? "Loading…" : `Load from ${SOURCE_UI[activeSource]?.label}`}
+        {isLoading ? "Loading" : `Load from ${SOURCE_UI[activeSource]?.label}`}
       </button>
     </div>
   );

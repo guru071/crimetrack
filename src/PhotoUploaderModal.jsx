@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import ReactCrop from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { X, RefreshCcw } from 'lucide-react';
+import { resizeImageFile } from './imageUtils';
 
 export default function PhotoUploaderModal({ initialMode, onPhotoCapture, onClose, humanInstance, T, css }) {
   const [cropSrc, setCropSrc] = useState(null);
@@ -66,15 +67,19 @@ export default function PhotoUploaderModal({ initialMode, onPhotoCapture, onClos
     setCropSrc(dataUrl);
   };
 
-  const handlePhotoUpload = (e) => {
+  const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) {
       if (!cropSrc) onClose();
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setCropSrc(reader.result);
-    reader.readAsDataURL(file);
+    const resizedBase64 = await resizeImageFile(file, 1024);
+    if (resizedBase64) {
+      setCropSrc(resizedBase64);
+    } else {
+      alert("Failed to load image");
+      onClose();
+    }
   };
 
   const applyCrop = async () => {

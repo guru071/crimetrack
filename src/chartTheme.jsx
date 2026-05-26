@@ -35,7 +35,7 @@ export const CHART_TOOLTIP_PROPS = {
 export const AXIS_TICK = { fill: '#f8fafc', fontSize: 12, fontWeight: 500 };
 export const GRID_STROKE = 'rgba(255, 255, 255, 0.18)';
 
-/** Legend list with name + % — readable on glass backgrounds */
+/** Legend list with name + %  readable on glass backgrounds */
 export function ChartLegendList({ payload, dataKey = 'value' }) {
   if (!payload?.length) return null;
   const total = payload.reduce((sum, p) => sum + (Number(p.payload?.[dataKey]) || Number(p.value) || 0), 0);

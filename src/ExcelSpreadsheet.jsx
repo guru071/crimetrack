@@ -11,8 +11,10 @@ import {
   removeDuplicates, rowsToTsv, parseTsvPaste,
 } from "./excelGridUtils";
 import PhotoUploaderModal from "./PhotoUploaderModal";
+import DocumentScannerModal from "./DocumentScannerModal";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
+import { AISearchBar } from "./features/DatabaseAI";
 
 const LABELS = {
   photo: "Photo", id: "ID", name: "Name", fatherName: "Father", address: "Address",
@@ -84,6 +86,7 @@ export default function ExcelSpreadsheet({
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [photoModalState, setPhotoModalState] = useState(null);
+  const [showFaceScanner, setShowFaceScanner] = useState(null); // stores rowIndex
   const [imageViewerState, setImageViewerState] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [colWidths, setColWidths] = useState({});
@@ -167,17 +170,23 @@ export default function ExcelSpreadsheet({
   const displayList = useMemo(() => {
     let list = rows.map((row, index) => ({ row, index }));
     const q = filterText.trim().toLowerCase();
-    if (q) {
+
+    // Check if we have an active AI search result override
+    if (window._aiSearchResults && window._aiSearchResults.length > 0 && q) {
+      const matchedIds = new Set(window._aiSearchResults.map(r => r.id));
+      list = list.filter(({ row }) => matchedIds.has(row.id));
+    } else if (q) {
       list = list.filter(({ row }) =>
-        Object.values(row).some((v) => String(v ?? "").toLowerCase().includes(q))
+        Object.values(row).some((v) => String(v || "").toLowerCase().includes(q))
       );
     }
+
     if (showDupOnly) list = list.filter(({ index }) => duplicateIndices.has(index));
     if (sortCol != null) {
       const mult = sortDir === "asc" ? 1 : -1;
       list = [...list].sort((a, b) => {
-        const va = a.row[sortCol] ?? "";
-        const vb = b.row[sortCol] ?? "";
+        const va = a.row[sortCol] - "";
+        const vb = b.row[sortCol] - "";
         const na = Number(va);
         const nb = Number(vb);
         if (!Number.isNaN(na) && !Number.isNaN(nb) && String(va).trim() && String(vb).trim()) {
@@ -192,7 +201,7 @@ export default function ExcelSpreadsheet({
   const ui = SOURCE_UI[dataSource] || SOURCE_UI.local;
   const activeKey = gridKeys[active.col];
   const activeRow = rows[active.row];
-  const formulaValue = activeRow && activeKey != null ? String(activeRow[activeKey] ?? "") : "";
+  const formulaValue = activeRow && activeKey != null ? String(activeRow[activeKey] || "") : "";
 
   const handleChange = (rowIndex, key, val) => {
     setRowsHist((prev) => {
@@ -486,10 +495,11 @@ export default function ExcelSpreadsheet({
       className="excel-app"
       style={panelHeight ? { height: panelHeight, minHeight: 200 } : {}}
     >
-      <div style={{ padding: "8px 14px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      {/* HEADER */}
+      <div style={{ padding: "72px 14px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 800, color: "var(--ct-text)" }}>Excel Workbook</div>
-          <div style={{ fontSize: 11, color: ui.color, fontWeight: 600 }}>{ui.label} • {rows.length} rows</div>
+          <div style={{ fontSize: 11, color: ui.color, fontWeight: 600 }}>{ui.label}  {rows.length} rows</div>
         </div>
       </div>
 
@@ -538,10 +548,19 @@ export default function ExcelSpreadsheet({
           type="button"
           className="excel-tool-btn"
           onClick={toggleMic}
-          style={{ padding: "0 4px", color: isListening ? "#ef4444" : "var(--ct-muted)", border: "none", background: "transparent" }}
+          style={{ padding: "0 4px", color: isListening ? "var(--ct-red)" : "var(--ct-muted)", border: "none", background: "transparent" }}
           title="Dictate"
         >
           <Mic size={16} style={{ animation: isListening ? "pulse 1.5s infinite" : "none" }} />
+        </button>
+        <button
+          type="button"
+          className="excel-tool-btn"
+          onClick={() => setShowFaceScanner(active.row)}
+          style={{ padding: "0 4px", color: "var(--ct-accent)", border: "none", background: "transparent" }}
+          title="AI Scan Document/Face"
+        >
+          <Camera size={16} /> AI Scan
         </button>
         <span style={{ color: "var(--ct-muted)", fontSize: 13, fontWeight: 700, margin: "0 4px" }}>fx</span>
         <input
@@ -557,12 +576,25 @@ export default function ExcelSpreadsheet({
       {/* Grid */}
 
 
+      <div style={{ padding: "0 10px", marginBottom: 12 }}>
+        <AISearchBar records={rows} onResults={(matched, q) => {
+          if (matched.length > 0) {
+            setFilterText(q); // For display
+            // We set displayList based on AI search
+            window._aiSearchResults = matched;
+          }
+        }} />
+      </div>
+
       <div style={{ margin: "0 10px", display: "flex", gap: 8, alignItems: "center" }}>
         <Search size={14} color="var(--ct-muted)" />
         <input
-          placeholder="Search all columns…"
+          placeholder="Regular Text Search..."
           value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
+          onChange={(e) => {
+            setFilterText(e.target.value);
+            window._aiSearchResults = null;
+          }}
           style={{ flex: 1, ...css.input, padding: "8px 12px" }}
         />
       </div>
@@ -572,6 +604,7 @@ export default function ExcelSpreadsheet({
           <AlertTriangle size={16} />
           <span><strong>{duplicateIndices.size}</strong> duplicate rows in <strong>{dupGroups}</strong> groups (by {DUPLICATE_KEYS.find((d) => d.id === dupKey)?.label})</span>
         </div>
+
       )}
 
       <div className="excel-sheet-wrap">
@@ -601,11 +634,11 @@ export default function ExcelSpreadsheet({
                   <div onClick={() => sortByColumn(k)} style={{ cursor: "pointer", width: "100%", padding: "6px 4px" }} title="Click to sort">
                     <div>{colToLetter(ci)}</div>
                     <div style={{ fontSize: 10, opacity: 0.85 }}>{LABELS[k] || k}</div>
-                    {sortCol === k && (sortDir === "asc" ? " ▴" : " ▾")}
+                    {sortCol === k && (sortDir === "asc" ? " " : " ")}
                   </div>
                   <div
                     onMouseDown={(e) => handleResizeStart(e, k)}
-                    onTouchStart={(e) => handleResizeStart({ ...e, clientX: e.touches[0].clientX, preventDefault: ()=>e.preventDefault(), stopPropagation: ()=>e.stopPropagation() }, k)}
+                    onTouchStart={(e) => handleResizeStart({ ...e, clientX: e.touches[0].clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() }, k)}
                     style={{
                       position: "absolute", right: 0, top: 0, bottom: 0, width: 8,
                       cursor: "col-resize", zIndex: 10, background: "transparent"
@@ -676,14 +709,14 @@ export default function ExcelSpreadsheet({
                           onChange={(e) => handleChange(rowIndex, k, e.target.value)}
                           onFocus={() => setActive({ row: rowIndex, col: colIndex })}
                         >
-                          <option value="">—</option>
+                          <option value=""></option>
                           {(k === "sex" ? ["Male", "Female", "Other"] : ["Active", "Arrested", "Acquitted", "Absconding", "Deceased"]).map((o) => (
                             <option key={o} value={o}>{o}</option>
                           ))}
                         </select>
                       ) : (
                         <input
-                          value={row[k] ?? ""}
+                          value={row[k] || ""}
                           onChange={(e) => handleChange(rowIndex, k, e.target.value)}
                           onFocus={() => setActive({ row: rowIndex, col: colIndex })}
                         />
@@ -701,7 +734,7 @@ export default function ExcelSpreadsheet({
         <span>Rows: <strong>{rows.length}</strong></span>
         <span>Selected: <strong>{selectedRows.size || 1}</strong></span>
         <span>Cell: <strong>{cellAddress(active.row, active.col)}</strong></span>
-        <span>Duplicates: <strong style={{ color: duplicateIndices.size ? "#fca5a5" : "inherit" }}>{duplicateIndices.size}</strong></span>
+        <span>Duplicates: <strong style={{ color: duplicateIndices.size ? "var(--ct-red)" : "inherit" }}>{duplicateIndices.size}</strong></span>
         <span>Source: <strong style={{ color: ui.color }}>{ui.label}</strong></span>
       </div>
 
@@ -745,8 +778,24 @@ export default function ExcelSpreadsheet({
             handleChange(photoModalState.rowIndex, "photo", dataUrl);
             setPhotoModalState(null);
           }}
-          T={{ text: "#fff", accent: ui.color || "#3b82f6", card2: "#1e293b", red: "#ef4444" }}
+          T={{ text: "var(--ct-text)", accent: ui.color || "var(--ct-accent)", card2: "var(--ct-card)", red: "var(--ct-red)" }}
           css={css}
+        />
+      )}
+
+      {showFaceScanner !== null && (
+        <DocumentScannerModal
+          records={records}
+          onClose={() => setShowFaceScanner(null)}
+          onScanResult={(extractedData) => {
+            setRowsHist(prev => {
+              const next = [...prev];
+              next[showFaceScanner] = { ...next[showFaceScanner], ...extractedData, isNew: false, updatedAt: new Date().toISOString() };
+              return next;
+            });
+            setShowFaceScanner(null);
+            toastShow?.("Data extracted and filled");
+          }}
         />
       )}
 
@@ -757,7 +806,7 @@ export default function ExcelSpreadsheet({
           display: "flex", alignItems: "center", justifyContent: "center"
         }} onClick={() => setImageViewerState(null)}>
           <button
-            style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "50%", padding: 8, cursor: "pointer", color: "#fff" }}
+            style={{ position: "absolute", top: 16, right: 16, background: "var(--ct-card)", border: "1px solid var(--ct-glass-border)", borderRadius: 8, padding: 8, cursor: "pointer", color: "var(--ct-text)" }}
             onClick={(e) => { e.stopPropagation(); setImageViewerState(null); }}
           >
             <X size={24} />
@@ -783,7 +832,7 @@ export default function ExcelSpreadsheet({
           background: "transparent", flexShrink: 0, userSelect: "none"
         }}
       >
-        <div style={{ width: 40, height: 4, borderRadius: 2, background: "var(--ct-border, #444)", opacity: 0.6 }} />
+        <div style={{ width: 40, height: 4, borderRadius: 2, background: "var(--ct-glass-border)", opacity: 0.75 }} />
       </div>
     </div>
   );

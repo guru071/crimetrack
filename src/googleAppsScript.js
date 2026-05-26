@@ -1,5 +1,5 @@
 /**
- * Google Sheets via Apps Script Web App — no Google Cloud API key required.
+ * Google Sheets via Apps Script Web App  no Google Cloud API key required.
  */
 
 export function normalizeWebAppUrl(url) {
@@ -59,6 +59,50 @@ export async function fetchFromAppsScript(webAppUrl, secret) {
 export async function pushToAppsScript(webAppUrl, records, secret) {
   return callAppsScriptWebApp(webAppUrl, { action: "write", records, secret });
 }
+
+export const APP_SCRIPT_CODE = `function doPost(e) {
+  let res = { status: 'success', message: 'Ok', records: [] };
+  try {
+    let payload = JSON.parse(e.postData.contents);
+    let sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+    if (payload.secret && payload.secret !== "demo") {
+       throw new Error("Invalid access secret");
+    }
+
+    if (payload.action === 'read') {
+      let data = sheet.getDataRange().getValues();
+      if (data.length > 1) {
+        let headers = data[0];
+        for(let i=1; i<data.length; i++) {
+          let row = data[i];
+          let obj = {};
+          headers.forEach((h, j) => obj[h] = row[j]);
+          res.records.push(obj);
+        }
+      }
+    } else if (payload.action === 'write') {
+      sheet.clear();
+      let records = payload.records || [];
+      if (records.length > 0) {
+        let headers = Object.keys(records[0]);
+        sheet.appendRow(headers);
+        records.forEach(r => {
+          let row = headers.map(h => {
+             let val = r[h];
+             if (typeof val === 'object') return JSON.stringify(val);
+             return val;
+          });
+          sheet.appendRow(row);
+        });
+      }
+    }
+  } catch(err) {
+    res.status = 'error';
+    res.message = err.toString();
+  }
+  return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
+}`;
 
 export async function fetchLogsFromAppsScript(webAppUrl, secret) {
   const json = await callAppsScriptWebApp(webAppUrl, { action: "read_logs", secret });

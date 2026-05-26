@@ -3,16 +3,19 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import {
   Home, ClipboardList, PlusCircle, Search, X, Settings,
   AlertTriangle, Shield, User, Save, FileText, Trash2,
-  ChevronRight, DownloadCloud, UploadCloud, FolderOpen, Activity, Lock, Users, ScanFace, Camera, Mic, GitCompare, Cloud, Bell, Database
+  ChevronRight, DownloadCloud, UploadCloud, FolderOpen, Activity, Lock, Users, ScanFace, Camera, Mic, GitCompare, Cloud, Bell, Database, Info, Server,
+  Brain, Building2, Crown, Hexagon
 } from "lucide-react";
 import { App as CapApp } from "@capacitor/app";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import { Capacitor } from "@capacitor/core";
-import ReactCrop from 'react-image-crop';
+import { LocalNotifications } from "@capacitor/local-notifications";
+import { StatusBar } from "@capacitor/status-bar";
+
 import 'react-image-crop/dist/ReactCrop.css';
 import CryptoJS from "crypto-js";
-import { getTimeBasedTheme, themeToCssVars } from './TimeBasedTheme';
+import { getSelectedTheme, themeToCssVars, THEMES } from './TimeBasedTheme';
 import { parseGoogleSheetInput, sheetLinkFromSettings } from './googleSheetUtils';
 import {
   EXCEL_COLUMNS, recordToExcelRow, embedPhotoInSheet, buildExcelImageMap,
@@ -34,15 +37,28 @@ import LoginView from './LoginView';
 import { auth, db, doc, getDoc, addDoc, collection, serverTimestamp, query, where, orderBy, limit, onSnapshot } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { initializeNativeGoogleSignIn } from './nativeGoogleSignIn';
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
+import { authenticateWithBiometric, isBiometricAvailable } from './biometricAuth';
+
+import PhotoUploaderModal from './PhotoUploaderModal';
+import DocumentScannerModal from './DocumentScannerModal';
+import { AISearchBar, AnomalyDetector, RecordAIBrief, MultiCaseAnalysis } from './features/DatabaseAI';
+import TerminalLoader from './TerminalLoader';
 
 const ExcelSpreadsheet = lazy(() => import('./ExcelSpreadsheet'));
 const GoogleSheetsSync = lazy(() => import('./GoogleSheetsSync'));
 const GoogleSheetsView = lazy(() => import('./GoogleSheetsView'));
 const OperationsRoom = lazy(() => import('./OperationsRoom'));
+const CommandCenter = lazy(() => import('./features/CommandCenter'));
+const AICopilot = lazy(() => import('./features/AICopilot'));
 const ProfileView = lazy(() => import('./ProfileView'));
 const AdvancedAnalyticsDashboard = lazy(() =>
   import('./AdvancedAnalytics').then((mod) => ({ default: mod.AdvancedAnalyticsDashboard }))
 );
+// Government Modules
+const PoliceIntelligenceEngine = lazy(() => import('./features/PoliceIntelligenceEngine'));
+
+import FloatingNav from './features/FloatingNav';
 
 function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -96,19 +112,53 @@ const humanConfig = {
 };
 
 let humanPromise;
+
+export const getDeviceRAM = () => {
+  return navigator.deviceMemory || 4; // defaults to 4GB if unsupported
+};
+
 async function getHumanModel() {
   if (!humanPromise) {
     humanPromise = import('@vladmandic/human').then(async ({ Human }) => {
-      const human = new Human(humanConfig);
+      const ram = getDeviceRAM();
+      // On low-RAM devices (<= 4GB), use lower precision/resolution to save VRAM
+      const dynamicConfig = {
+        ...humanConfig,
+        filter: { enabled: true, equalization: true, width: ram <= 3 ? 480 : 0 },
+        face: {
+          ...humanConfig.face,
+          detector: { ...humanConfig.face.detector, modelPath: ram <= 4 ? 'blazeface-front.json' : 'blazeface.json' }
+        }
+      };
+      const human = new Human(dynamicConfig);
       await human.load();
-      await human.warmup();
+      // Skip warmup on very low RAM to prevent initialization crash
+      if (ram > 2) await human.warmup();
       return human;
     });
   }
   return humanPromise;
 }
 
-/* ─── Constants ─────────────────────────────────────────────── */
+export async function releaseHumanModel() {
+  const ram = getDeviceRAM();
+  if (ram <= 4 && humanPromise) {
+    try {
+      const human = await humanPromise;
+      if (human && human.tf) {
+        // Dispose WebGL/WebGPU tensors to free up device memory!
+        human.tf.disposeVariables();
+        human.tf.engine().endScope();
+      }
+    } catch (e) {
+      console.warn("Failed to release Human model", e);
+    } finally {
+      humanPromise = null; // Force reload on next use
+    }
+  }
+}
+
+/*  Constants  */
 const FIELDS = [
   { key: "name", label: "Name of Accused", type: "text", required: true },
   { key: "fatherName", label: "Father's Name", type: "text" },
@@ -131,6 +181,10 @@ const FIELDS = [
   { key: "associates", label: "Name of Associates", type: "textarea" },
   { key: "status", label: "Status", type: "select", opts: ["Active", "Arrested", "Acquitted", "Absconding", "Deceased"] },
   { key: "caseYear", label: "Case Year", type: "number" },
+  { key: "aadharNumber", label: "Aadhar / ID Number", type: "text" },
+  { key: "bankAccount", label: "Bank Accounts", type: "textarea" },
+  { key: "phoneImei", label: "Phone / IMEI", type: "textarea" },
+  { key: "socialMedia", label: "Social Media", type: "textarea" },
   { key: "notes", label: "Additional Notes", type: "textarea" },
 ];
 
@@ -224,7 +278,7 @@ const DEMO_RECORDS = [
 const DEMO_RESTRICTED_MESSAGE = "Demo mode is read-only. Login with a registered police account to use live data and secured tools.";
 
 
-/* ─── Styles (CSS variables set on app root from sunrise/sunset theme) ── */
+/*  Styles (CSS variables set on app root from sunrise/sunset theme)  */
 const T = {
   bg: "var(--ct-bg)",
   surface: "var(--ct-surface)",
@@ -251,9 +305,9 @@ const glassSurface = {
 };
 
 const css = {
-  page: { minHeight: "100vh", color: "var(--ct-text)", paddingBottom: 80, width: "100%", maxWidth: 800, margin: "0 auto" },
-  header: { position: "fixed", top: 0, left: 0, right: 0, height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 100, transition: "all 0.5s ease" },
-  bottomNav: { position: "fixed", bottom: 0, left: 0, right: 0, height: 68, display: "flex", alignItems: "center", zIndex: 100, transition: "all 0.5s ease" },
+  page: { width: "100%", maxWidth: 800, margin: "0 auto", position: "relative", zIndex: 1 },
+  header: { position: "fixed", top: 0, left: 0, right: 0, height: "56px", paddingTop: "0px", display: "flex", alignItems: "center", justifyContent: "space-between", paddingLeft: 16, paddingRight: 16, paddingBottom: 0, zIndex: 100, transition: "all 0.5s ease" },
+  bottomNav: { position: "relative", left: 0, right: 0, height: "calc(68px + env(safe-area-inset-bottom, 0px))", paddingBottom: "env(safe-area-inset-bottom, 0px)", display: "flex", alignItems: "center", zIndex: 100, transition: "all 0.5s ease" },
   card: { ...glassSurface, borderRadius: 20, padding: "18px", marginBottom: 14 },
   statCard: { ...glassSurface, borderRadius: 20, padding: "20px 18px", flex: 1 },
   btn: { ...glassSurface, background: "var(--ct-glass-bg)", borderRadius: 12, padding: "10px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8, justifyContent: "center", transition: "all 0.2s ease", border: "none" },
@@ -265,17 +319,17 @@ const css = {
   divider: { height: 1, background: "var(--ct-glass-border)", margin: "16px 0", opacity: 0.8 },
 };
 
-/* ─── Utilities ──────────────────────────────────────────────── */
+/*  Utilities  */
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-const initials = (name) => (name || "??").split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase();
+const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "";
+const initials = (name) => (name || " - ").split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase();
 const avatarColor = (name) => {
   const colors = ["#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4"];
   let h = 0; for (let c of (name || "")) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
   return colors[Math.abs(h) % colors.length];
 };
 
-/* ─── Sub-components ─────────────────────────────────────────── */
+/*  Sub-components  */
 function StatusDot({ status }) {
   return <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: STATUS_CFG[status]?.dot || T.muted }} />;
 }
@@ -302,7 +356,7 @@ function Toast({ msg, type }) {
 
 function ModuleLoader({ label = "Loading module..." }) {
   return (
-    <div style={{ padding: "92px 14px 80px", color: T.muted, textAlign: "center", fontSize: 13 }}>
+    <div style={{ padding: "92px 14px 14px", color: T.muted, textAlign: "center", fontSize: 13 }}>
       {label}
     </div>
   );
@@ -353,7 +407,7 @@ function Header({ view, goBack, navStack, title, timeTheme, isOnline, navigate }
           </div>
         }
       </div>
-      {title && <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ct-text)", position: "absolute", left: "50%", transform: "translateX(-50%)", textShadow: "var(--ct-text-shadow)" }}>{title}</div>}
+      {title && <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ct-text)", position: "absolute", left: "42%", transform: "translateX(-50%)", textShadow: "var(--ct-text-shadow)" }}>{title}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {timeTheme?.label && <span className="ct-period-pill">{timeTheme.label}</span>}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginRight: 4 }}>
@@ -368,58 +422,10 @@ function Header({ view, goBack, navStack, title, timeTheme, isOnline, navigate }
   );
 }
 
-function BottomNav({ view, navTo, navigate, isGoogleSheetsAuthenticated, isDemoMode, onRestrictedAction }) {
-  const tabs = [
-    { id: "dashboard", icon: <Home size={20} />, label: "Home" },
-    { id: "list", icon: <ClipboardList size={20} />, label: "Records" },
-    { id: "__add__", icon: <PlusCircle size={28} />, label: "Add", isAdd: true },
-    { id: "operations", icon: <Activity size={20} />, label: "Operations" },
-    ...(isGoogleSheetsAuthenticated ? [{ id: "sheets", icon: <Cloud size={20} />, label: "Sheets" }] : []),
-    { id: "profile", icon: <User size={20} />, label: "Profile" },
-  ];
-
-  return (
-    <>
-      {/* Add Options Bottom Sheet (Removed, direct to form now) */}
-      <div className="ct-glass-nav" style={css.bottomNav}>
-        {tabs.map(t => {
-          const active = view === t.id;
-          const tabColor = t.isAdd || active ? "var(--ct-accent)" : "var(--ct-muted)";
-          return (
-            <button key={t.id} type="button"
-              onClick={t.isAdd
-                ? () => (isDemoMode ? onRestrictedAction?.("Adding records") : navigate("form", { record: null }))
-                : () => navTo(t.id)}
-              style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "10px 4px" }}>
-              <span style={{
-                color: tabColor,
-                ...(t.isAdd ? {
-                  background: "var(--ct-accent)",
-                  color: "var(--ct-accent-fg)",
-                  borderRadius: "50%",
-                  padding: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 4px 16px color-mix(in srgb, var(--ct-accent) 50%, transparent)",
-                } : active ? {
-                  background: "color-mix(in srgb, var(--ct-accent) 22%, transparent)",
-                  borderRadius: 12,
-                  padding: 6,
-                  display: "flex",
-                } : { display: "flex", padding: 6 }),
-              }}>{t.icon}</span>
-              <span style={{ fontSize: 10, color: tabColor, fontWeight: (active || t.isAdd) ? 700 : 500 }}>{t.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </>
-  );
-}
+// BottomNav has been replaced by FloatingNav
 
 
-/* ─── Dashboard ──────────────────────────────────────────────── */
+/*  Dashboard  */
 function Dashboard({
   records,
   navigate,
@@ -465,13 +471,21 @@ function Dashboard({
           </div>
         </div>
       )}
+
+      {/* System Core Kernel Monitor */}
+      <div style={{ marginBottom: 16 }}>
+        <Suspense fallback={null}>
+          <CommandCenter />
+        </Suspense>
+      </div>
+
       {/* Automated Alert Center */}
       {(() => {
         const alerts = records
           .filter(r => r.status === "Active" || getThreatLevel(r).level === "EXTREME" || getThreatLevel(r).level === "HIGH")
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 3)
-          .map(r => `⚠️ ${r.name} (${r.areaOfOperation || "Unknown Area"}) - ${getThreatLevel(r).level} Threat`);
+          .map(r => `[ALERT] ${r.name} (${r.areaOfOperation || "Unknown Area"}) - ${getThreatLevel(r).level} Threat`);
 
         if (alerts.length === 0) return null;
         return (
@@ -488,7 +502,7 @@ function Dashboard({
 
       {/* System Status / Connection Hub */}
       <div style={{ ...css.card, marginBottom: 16 }}>
-        <div style={css.sectionTitle}>▸ Connection Hub</div>
+        <div style={css.sectionTitle}> Connection Hub</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
           <div style={{ background: T.card2, padding: "10px", borderRadius: 12, border: `1px solid ${T.border}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
             <Save size={18} color={T.green} />
@@ -523,7 +537,7 @@ function Dashboard({
         />
         <div style={{ fontSize: 11, color: "var(--ct-muted)", marginTop: 8 }}>
           Active: <strong style={{ color: SOURCE_UI[activeDataSource]?.color }}>{SOURCE_UI[activeDataSource]?.label}</strong>
-          {" · "}{records.length} records
+          {"  "}{records.length} records
         </div>
         <button
           style={{ ...css.btn, width: "100%", marginTop: 10, borderColor: "#f472b6", color: "#f472b6" }}
@@ -579,7 +593,7 @@ function Dashboard({
       {/* Chart */}
       {analytics.byStatus.length > 0 && (
         <div style={{ ...css.card, marginBottom: 16 }}>
-          <div style={css.sectionTitle}>▸ Status Breakdown</div>
+          <div style={css.sectionTitle}> Status Breakdown</div>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie
@@ -609,7 +623,7 @@ function Dashboard({
       )}
 
       {/* Recent records */}
-      <div style={css.sectionTitle}>▸ Recent Records</div>
+      <div style={css.sectionTitle}> Recent Records</div>
       {recent.map(r => (
         <RecordRow key={r.id} record={r} onClick={() => navigate("detail", { id: r.id })} />
       ))}
@@ -623,11 +637,12 @@ function Dashboard({
           No records yet. Tap Add to create the first profile.
         </div>
       )}
+
     </div>
   );
 }
 
-/* ─── Record Row ─────────────────────────────────────────────── */
+/*  Record Row  */
 function RecordRow({ record, onClick }) {
   return (
     <div onClick={onClick} style={{ ...css.card, display: "flex", alignItems: "center", gap: 12, cursor: "pointer", transition: "border-color 0.15s" }}
@@ -637,7 +652,7 @@ function RecordRow({ record, onClick }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{record.name}</div>
         <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
-          {record.hsNo} · {record.policeStation || "—"}
+          {record.hsNo}  {record.policeStation || ""}
         </div>
         <div style={{ marginTop: 4 }}>
           <span style={css.tag(record.status)}>
@@ -646,21 +661,31 @@ function RecordRow({ record, onClick }) {
         </div>
       </div>
       <div style={{ textAlign: "right", fontSize: 11, color: T.muted, display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-        <div>{record.caseYear || "—"}</div>
+        <div>{record.caseYear || ""}</div>
         <ChevronRight size={16} style={{ marginTop: 8, color: T.muted }} />
       </div>
     </div>
   );
 }
 
-/* ─── Accused List ───────────────────────────────────────────── */
+/*  Accused List  */
 function AccusedList({ records, allRecords, navigate, searchQuery, setSearchQuery, filters, setFilters, showFilters, setShowFilters }) {
   const years = [...new Set(allRecords.map(r => r.caseYear).filter(Boolean))].sort((a, b) => b - a);
   const areas = [...new Set(allRecords.map(r => r.areaOfOperation?.split(",")[0]?.trim()).filter(Boolean))];
 
   return (
     <div style={{ padding: "72px 14px 14px" }}>
-      {/* Search bar */}
+      {/* AI Search + Anomaly Detection */}
+      <AISearchBar records={records} onResults={(matched, q) => {
+        if (matched.length > 0) {
+          setSearchQuery(`AI: ${q}`);
+          // Use a custom filter signal for AI results via a ref pattern
+          window._aiSearchResults = matched;
+        }
+      }} />
+      <AnomalyDetector records={records} />
+
+      {/* Regular Search bar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <div style={{ flex: 1, position: "relative" }}>
           <Search size={16} color={T.muted} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
@@ -690,7 +715,7 @@ function AccusedList({ records, allRecords, navigate, searchQuery, setSearchQuer
       {/* Filter toggle and Actions */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         <button style={{ ...css.btn, fontSize: 12, padding: "6px 12px", color: showFilters ? T.accent : T.muted, borderColor: showFilters ? T.accent : T.border }} onClick={() => setShowFilters(s => !s)}>
-          <Settings size={14} /> Filters {Object.values(filters).some(v => v) ? "●" : ""}
+          <Settings size={14} /> Filters {Object.values(filters).some(v => v) ? "" : ""}
         </button>
         <button style={{ ...css.btn, fontSize: 12, padding: "6px 12px", color: T.accent, borderColor: T.border }} onClick={() => navigate("compare")}>
           <GitCompare size={14} /> Compare Records
@@ -753,7 +778,7 @@ function AccusedList({ records, allRecords, navigate, searchQuery, setSearchQuer
   );
 }
 
-/* ─── Accused Detail ─────────────────────────────────────────── */
+/*  Accused Detail  */
 function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuickUpdate, isDemoMode }) {
   const [fullScreenImage, setFullScreenImage] = useState(null);
   const [showPdfOptions, setShowPdfOptions] = useState(false);
@@ -838,28 +863,82 @@ function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuic
         </button>
       </div>
 
-      {/* Personal Info */}
-      <div style={css.sectionTitle}>▸ Personal Information</div>
-      <div style={css.card}>
-        {["name", "fatherName", "address", "age", "sex", "communityReligion", "familyMembers", "propertiesDetails"].map(k => (
-          <Field key={k} field={FIELDS.find(f => f.key === k)} />
-        ))}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+        <div>
+          {/* Personal Info */}
+          <div style={css.sectionTitle}> Personal Information</div>
+          <div style={css.card}>
+            {["name", "fatherName", "address", "age", "sex", "communityReligion", "familyMembers", "propertiesDetails"].map(k => (
+              <Field key={k} field={FIELDS.find(f => f.key === k)} />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          {/* Legal Info */}
+          <div style={css.sectionTitle}> Legal Details</div>
+          <div style={css.card}>
+            {["policeStation", "hsNo", "firNumber", "firDate", "casesPending", "currentDoings", "caseYear"].map(k => (
+              <Field key={k} field={FIELDS.find(f => f.key === k)} />
+            ))}
+          </div>
+
+          {/* Tracking Details */}
+          <div style={css.sectionTitle}> Identity & Tracking</div>
+          <div style={css.card}>
+            {["aadharNumber", "bankAccount", "phoneImei", "socialMedia"].map(k => (
+              <Field key={k} field={FIELDS.find(f => f.key === k)} />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          {/* Criminal Profile */}
+          <div style={css.sectionTitle}> Criminal Profile</div>
+          <div style={css.card}>
+            {["hideouts", "areaOfOperation", "gangLeader", "associates", "notes"].map(k => (
+              <Field key={k} field={FIELDS.find(f => f.key === k)} />
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Legal Info */}
-      <div style={css.sectionTitle}>▸ Legal Details</div>
-      <div style={css.card}>
-        {["policeStation", "hsNo", "casesPending", "currentDoings", "caseYear"].map(k => (
-          <Field key={k} field={FIELDS.find(f => f.key === k)} />
-        ))}
-      </div>
-
-      {/* Criminal Profile */}
-      <div style={css.sectionTitle}>▸ Criminal Profile</div>
-      <div style={css.card}>
-        {["hideouts", "areaOfOperation", "gangLeader", "associates", "notes"].map(k => (
-          <Field key={k} field={FIELDS.find(f => f.key === k)} />
-        ))}
+      {/* ── Case History ─────────────────────────────── */}
+      <div style={{ marginTop: 16 }}>
+        <div style={css.sectionTitle}> Case History ({(record.cases || []).length + (record.firNumber ? 1 : 0)} cases)</div>
+        <div style={css.card}>
+          {/* Legacy single FIR */}
+          {record.firNumber && (
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: T.text }}>FIR: {record.firNumber}</div>
+                <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>Legacy</span>
+              </div>
+              {record.firDate && <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Date: {record.firDate}</div>}
+            </div>
+          )}
+          {/* New multi-cases */}
+          {(record.cases || []).map((c, i) => (
+            <div key={i} style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: T.text }}>FIR: {c.caseId || `Case ${i + 1}`}</div>
+                <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: c.status === 'Convicted' ? 'rgba(239,68,68,0.15)' : c.status === 'Acquitted' ? 'rgba(16,185,129,0.15)' : 'rgba(59,130,246,0.15)', color: c.status === 'Convicted' ? '#f87171' : c.status === 'Acquitted' ? '#34d399' : '#60a5fa', fontWeight: 700 }}>{c.status || 'Pending'}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {c.offense && <div style={{ fontSize: 12, color: T.muted }}>Offense: <span style={{ color: T.text }}>{c.offense}</span></div>}
+                {c.date && <div style={{ fontSize: 12, color: T.muted }}>Date: <span style={{ color: T.text }}>{c.date}</span></div>}
+                {c.court && <div style={{ fontSize: 12, color: T.muted }}>Court: <span style={{ color: T.text }}>{c.court}</span></div>}
+              </div>
+              {c.notes && <div style={{ marginTop: 6, fontSize: 12, color: T.muted, fontStyle: 'italic' }}>{c.notes}</div>}
+            </div>
+          ))}
+          {!(record.cases || []).length && !record.firNumber && (
+            <div style={{ color: T.muted, fontSize: 13, textAlign: 'center', padding: 16 }}>No cases recorded. Edit this profile to add cases.</div>
+          )}
+          {/* AI Analysis Buttons */}
+          <RecordAIBrief record={record} />
+          <MultiCaseAnalysis record={record} />
+        </div>
       </div>
 
       {fullScreenImage && (
@@ -872,7 +951,7 @@ function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuic
             style={{ position: "absolute", top: 20, right: 20, background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: "50%", width: 40, height: 40, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={(e) => { e.stopPropagation(); setFullScreenImage(null); }}
           >
-            ✕
+            X
           </button>
         </div>
       )}
@@ -899,7 +978,7 @@ function AccusedDetail({ record, records, navigate, onDelete, onSharePDF, onQuic
   );
 }
 
-/* ─── Speech Correction ──────────────────────────────────────── */
+/*  Speech Correction  */
 const SPEECH_CORRECTIONS = {
   // Common Indian name / legal mishearings
   "fir": "FIR", "f.i.r": "FIR", "first information report": "FIR",
@@ -937,15 +1016,17 @@ const correctSpeech = (text) => {
   return corrected;
 };
 
-/* ─── Accused Form ───────────────────────────────────────────── */
-function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHumanModel }) {
+/*  Accused Form  */
+function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHumanModel, releaseHumanModel }) {
   const isEdit = !!record;
   const [form, setForm] = useState(record || {});
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const [saving, setSaving] = useState(false);
   const [saveDest, setSaveDest] = useState(activeDataSource || "local");
   const [errors, setErrors] = useState({});
   const [dictatingKey, setDictatingKey] = useState(null);
   const [interimText, setInterimText] = useState("");
+  const [showDocScanner, setShowDocScanner] = useState(false);
   const recognitionRef = useRef(null);
 
   const stopDictation = () => {
@@ -957,36 +1038,78 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
     setInterimText("");
   };
 
-  const toggleDictation = (k) => {
+  const toggleDictation = async (k) => {
     if (dictatingKey === k) {
-      stopDictation();
+      // Stop dictation
+      if (Capacitor.isNativePlatform()) {
+        try { await SpeechRecognition.stop(); } catch (e) { console.debug("Speech stop ignored:", e?.message || e); }
+      } else {
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+          recognitionRef.current = null;
+        }
+      }
+      setDictatingKey(null);
+      setInterimText("");
       return;
     }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Voice dictation is not supported in your browser. Try Chrome.");
+
+    setDictatingKey(k);
+    setInterimText("Listening...");
+
+    if (Capacitor.isNativePlatform()) {
+      // Native Android: use Capacitor SpeechRecognition plugin
+      try {
+        let perm = await SpeechRecognition.checkPermissions();
+        if (perm.speechRecognition !== 'granted') {
+          perm = await SpeechRecognition.requestPermissions();
+          if (perm.speechRecognition !== 'granted') {
+            alert("Microphone permission denied. Please allow it in Settings.");
+            setDictatingKey(null); setInterimText(""); return;
+          }
+        }
+
+        const result = await SpeechRecognition.start({
+          language: 'en-IN',
+          maxResults: 1,
+          prompt: 'Speak now...',
+          partialResults: false,
+          popup: false, // Forces silent recording with auto-close on silence
+        });
+
+        const finalText = result?.matches?.[0] || '';
+        if (finalText) {
+          const corrected = correctSpeech(finalText);
+          setForm(f => ({ ...f, [k]: (f[k] ? f[k].trimEnd() + ' ' : '') + corrected }));
+        }
+        setDictatingKey(null);
+        setInterimText('');
+      } catch (err) {
+        console.error('Native speech error', err);
+        setDictatingKey(null);
+        setInterimText('');
+      }
       return;
     }
-    const recognition = new SpeechRecognition();
+
+    // Web browser: use WebSpeech API
+    const WebSpeech = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!WebSpeech) {
+      alert("Voice dictation is not supported. Use the Android app.");
+      setDictatingKey(null); setInterimText(""); return;
+    }
+    const recognition = new WebSpeech();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'en-IN';
     recognitionRef.current = recognition;
 
-    recognition.onstart = () => { setDictatingKey(k); setInterimText(""); };
+    recognition.onstart = () => { setInterimText(""); };
     recognition.onresult = (event) => {
       let interim = "";
       let final = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        // Pick the best alternative based on confidence
         let bestTranscript = event.results[i][0].transcript;
-        let bestConfidence = event.results[i][0].confidence;
-        for (let j = 1; j < event.results[i].length; j++) {
-          if (event.results[i][j].confidence > bestConfidence) {
-            bestTranscript = event.results[i][j].transcript;
-            bestConfidence = event.results[i][j].confidence;
-          }
-        }
         if (event.results[i].isFinal) final += bestTranscript + " ";
         else interim += bestTranscript;
       }
@@ -998,143 +1121,43 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
     };
     recognition.onerror = (e) => {
       if (e.error !== 'no-speech') console.error("Speech recognition error", e);
-      stopDictation();
+      if (e.error === 'not-allowed') {
+        recognitionRef.current = null;
+        setDictatingKey(null);
+        setInterimText("");
+      }
     };
-    recognition.onend = () => { setDictatingKey(null); setInterimText(""); };
-    recognition.start();
-  };
-  const photoRef = useRef();
-  const ocrRef = useRef();
-
-  const handleOcrUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setSaving(true);
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch("http://localhost:8000/api/ocr", { method: "POST", body: formData });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const { name, age, firNumber, address } = data.extracted;
-        setForm(f => ({
-          ...f,
-          ...(name && { name }),
-          ...(age && { age }),
-          ...(firNumber && { firNumber }),
-          ...(address && { address }),
-        }));
-        alert("Document scanned successfully! Form auto-filled.");
+    recognition.onend = () => {
+      if (recognitionRef.current === recognition) {
+        try { recognition.start(); } catch (e) { console.debug("Speech restart ignored:", e?.message || e); }
       } else {
-        alert("OCR Error: " + (data.detail || "Failed to extract text."));
+        setDictatingKey(null);
+        setInterimText("");
       }
-    } catch (err) {
-      alert("Could not connect to Python AI Engine. Ensure the Python backend is running on port 8000.");
-    }
-    setSaving(false);
-    if (ocrRef.current) ocrRef.current.value = "";
-  };
-
-  const [cropSrc, setCropSrc] = useState(null);
-  const [crop, setCrop] = useState({ unit: '%', x: 25, y: 25, width: 50, height: 50, aspect: 1 });
-  const [completedCrop, setCompletedCrop] = useState(null);
-  const imgRef = useRef(null);
-  const videoRef = useRef(null);
-  const [useCamera, setUseCamera] = useState(false);
-
-  const startCamera = async () => {
-    setUseCamera(true);
+    };
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-    } catch (e) {
-      alert("Camera access denied or unavailable.");
-      setUseCamera(false);
+      recognition.start();
+    } catch {
+      setDictatingKey(null);
     }
   };
+  const handleOcrExtract = (fields) => {
+    setForm(f => ({ ...f, ...fields }));
+  };
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
-      videoRef.current.srcObject = null;
+
+
+  const [photoMode, setPhotoMode] = useState(null);
+  const [humanInstance, setHumanInstance] = useState(null);
+
+  useEffect(() => {
+    if (getHumanModel) {
+      getHumanModel().then(h => setHumanInstance(h)).catch(err => console.log("Failed to load Human model for AccusedForm", err));
     }
-    setUseCamera(false);
-  };
-
-  const capturePhoto = () => {
-    if (!videoRef.current) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    canvas.getContext("2d").drawImage(videoRef.current, 0, 0);
-    const dataUrl = canvas.toDataURL("image/jpeg");
-    stopCamera();
-    setCropSrc(dataUrl);
-  };
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const handlePhoto = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setCropSrc(reader.result);
-    reader.readAsDataURL(file);
-  };
-
-  const applyCrop = async () => {
-    if (!completedCrop || !imgRef.current) return;
-    const image = imgRef.current;
-    const canvas = document.createElement('canvas');
-    const scaleX = image.naturalWidth / image.width;
-    const scaleY = image.naturalHeight / image.height;
-
-    const MAX_DIM = 600;
-    let targetW = completedCrop.width * scaleX;
-    let targetH = completedCrop.height * scaleY;
-
-    if (targetW > MAX_DIM || targetH > MAX_DIM) {
-      const ratio = Math.min(MAX_DIM / targetW, MAX_DIM / targetH);
-      targetW *= ratio;
-      targetH *= ratio;
-    }
-
-    canvas.width = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext('2d');
-
-    ctx.drawImage(
-      image,
-      completedCrop.x * scaleX,
-      completedCrop.y * scaleY,
-      completedCrop.width * scaleX,
-      completedCrop.height * scaleY,
-      0, 0, targetW, targetH
-    );
-
-    const base64Image = canvas.toDataURL('image/jpeg', 0.8);
-    set("photo", base64Image);
-
-    try {
-      const human = await getHumanModel();
-      const result = await human.detect(canvas);
-      if (result && result.face && result.face.length > 0 && result.face[0].embedding) {
-        set("faceDescriptor", Array.from(result.face[0].embedding));
-      } else {
-        alert("Warning: No clear face detected in the photo. Facial recognition search will not work for this record.");
-      }
-    } catch (e) {
-      console.log("Human API error during descriptor extraction", e);
-    }
-
-    setCropSrc(null);
-    if (photoRef.current) photoRef.current.value = "";
-  };
+    return () => {
+      if (releaseHumanModel) releaseHumanModel();
+    };
+  }, [getHumanModel, releaseHumanModel]);
 
   const validate = () => {
     const e = {};
@@ -1162,54 +1185,46 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
         {isEdit ? "Edit Record" : "New Accused Record"}
       </div>
 
-      {cropSrc && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ color: "#fff", marginBottom: 16, fontSize: 16, fontWeight: 600 }}>Crop Photo</div>
-          <div style={{ maxHeight: "60vh", overflow: "auto" }}>
-            <ReactCrop crop={crop} onChange={c => setCrop(c)} onComplete={c => setCompletedCrop(c)} aspect={1}>
-              <img ref={imgRef} src={cropSrc} style={{ maxHeight: "60vh" }} alt="Crop me" />
-            </ReactCrop>
-          </div>
-          <div style={{ display: "flex", gap: 16, marginTop: 24, width: "100%", maxWidth: 300 }}>
-            <button style={{ ...css.btn, flex: 1 }} onClick={() => { setCropSrc(null); if (photoRef.current) photoRef.current.value = ""; }}>Cancel</button>
-            <button style={{ ...css.btnAccent, flex: 1 }} onClick={applyCrop}>Apply</button>
-          </div>
-        </div>
+      {photoMode && (
+        <PhotoUploaderModal
+          initialMode={photoMode}
+          onPhotoCapture={(base64Image, faceDesc) => {
+            set("photo", base64Image);
+            if (faceDesc) set("faceDescriptor", faceDesc);
+            setPhotoMode(null);
+          }}
+          onClose={() => setPhotoMode(null)}
+          humanInstance={humanInstance}
+          T={T}
+          css={css}
+        />
       )}
 
-      {useCamera && (
-        <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyItems: "center", justifyContent: "center" }}>
-          <div style={{ color: "#fff", fontSize: 16, marginBottom: 20, fontWeight: 600 }}>Take Suspect Photo</div>
-          <video ref={videoRef} autoPlay playsInline style={{ width: "100%", maxHeight: "60vh", objectFit: "cover", border: `2px solid ${T.accent}` }} />
-          <div style={{ display: "flex", gap: 16, width: "100%", maxWidth: 300, marginTop: 30 }}>
-            <button style={{ ...css.btnAccent, flex: 2, padding: 16, fontSize: 16, background: "#4ade80", color: "#000" }} onClick={capturePhoto}>
-              📸 Capture
-            </button>
-            <button style={{ ...css.btn, flex: 1, borderColor: T.red, color: T.red }} onClick={stopCamera}>
-              Cancel
-            </button>
-          </div>
-        </div>
+      {showDocScanner && (
+        <DocumentScannerModal apiKey={settings?.geminiApiKey}
+          onExtract={handleOcrExtract}
+          onClose={() => setShowDocScanner(false)}
+        />
       )}
 
-      {/* OCR Document Scanner */}
-      <div style={{ ...css.card, display: "flex", alignItems: "center", gap: 14, marginBottom: 16, borderColor: T.accent2 }}>
-        <div style={{ width: 48, height: 48, borderRadius: 24, background: T.accent2 + "22", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {/* AI Document Scanner */}
+      <div
+        onClick={() => setShowDocScanner(true)}
+        style={{ ...css.card, display: "flex", alignItems: "center", gap: 14, marginBottom: 16, borderColor: T.accent2, cursor: 'pointer', transition: 'opacity 0.15s' }}
+      >
+        <div style={{ width: 48, height: 48, borderRadius: 24, background: T.accent2 + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <ScanFace size={24} color={T.accent2} />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>AI Document Scanner</div>
-          <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Auto-fill form from ID Card or FIR</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>AI Document Scanner</div>
+          <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Live camera OCR  Auto-fills all fields from ID, FIR, HS</div>
         </div>
-        <button style={{ ...css.btn, fontSize: 12, borderColor: T.accent2, color: T.accent2 }} onClick={() => ocrRef.current?.click()} disabled={saving}>
-          {saving ? "..." : "Scan"}
-        </button>
-        <input ref={ocrRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleOcrUpload} />
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.accent2, border: `1px solid ${T.accent2}`, borderRadius: 8, padding: '4px 10px' }}>SCAN</div>
       </div>
 
       {/* Photo */}
       <div style={{ ...css.card, display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-        <div onClick={() => photoRef.current?.click()} style={{ cursor: "pointer" }}>
+        <div onClick={() => setPhotoMode('upload')} style={{ cursor: "pointer" }}>
           {form.photo
             ? <img src={form.photo} alt="Upload" style={{ width: 72, height: 72, borderRadius: 36, objectFit: "cover", border: `2px solid ${T.accent}` }} />
             : <div style={{ width: 72, height: 72, borderRadius: 36, background: T.card2, border: `2px dashed ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}><User size={28} color={T.muted} /></div>
@@ -1217,21 +1232,20 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
         </div>
         <div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button style={{ ...css.btn, fontSize: 12 }} onClick={() => photoRef.current?.click()}><UploadCloud size={14} /> Upload</button>
-            <button style={{ ...css.btn, fontSize: 12 }} onClick={startCamera}><Camera size={14} /> Camera</button>
+            <button style={{ ...css.btn, fontSize: 12 }} onClick={() => setPhotoMode('upload')}><UploadCloud size={14} /> Upload</button>
+            <button style={{ ...css.btn, fontSize: 12 }} onClick={() => setPhotoMode('camera')}><Camera size={14} /> Camera</button>
           </div>
           {form.photo && <button style={{ ...css.btn, fontSize: 12, color: T.red, borderColor: "color-mix(in srgb, var(--ct-red) 30%, transparent)", marginTop: 6 }} onClick={() => set("photo", null)}><Trash2 size={14} /> Remove</button>}
           <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Auto-compresses high quality images</div>
           <div style={{ fontSize: 11, color: T.red, marginTop: 6, fontWeight: 600, background: "color-mix(in srgb, var(--ct-red) 12%, transparent)", padding: 6, borderRadius: 6 }}>
-            ⚠️ For powerful use cases (Twin Matcher), registered photo must be perfectly lit and looking directly at camera.
+            Warning: For powerful use cases (Twin Matcher), registered photo must be perfectly lit and looking directly at camera.
           </div>
         </div>
-        <input ref={photoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhoto} />
       </div>
 
       {/* Floating Mic Recording Overlay */}
       {dictatingKey && (
-        <div style={{ position: "fixed", bottom: 120, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.92)", border: `1.5px solid ${T.red}`, borderRadius: 16, padding: "14px 22px", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minWidth: 260, maxWidth: 360, boxShadow: "0 4px 32px rgba(239,68,68,0.3)" }}>
+        <div style={{ position: "fixed", bottom: "120px", left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.92)", border: `1.5px solid ${T.red}`, borderRadius: 16, padding: "14px 22px", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minWidth: 260, maxWidth: 360, boxShadow: "0 4px 32px rgba(239,68,68,0.3)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
               className="mic-active"
@@ -1241,7 +1255,7 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
               <Mic size={22} color="#fff" />
             </button>
             <div>
-              <div style={{ color: T.red, fontWeight: 700, fontSize: 13 }}>Listening…</div>
+              <div style={{ color: T.red, fontWeight: 700, fontSize: 13 }}>Listening</div>
               <div style={{ color: T.muted, fontSize: 11 }}>Tap mic to stop</div>
             </div>
           </div>
@@ -1256,7 +1270,7 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
       {/* Sections */}
       {sections.map(sec => (
         <div key={sec.title}>
-          <div style={css.sectionTitle}>▸ {sec.title}</div>
+          <div style={css.sectionTitle}> {sec.title}</div>
           <div style={{ ...css.card, marginBottom: 16 }}>
             {sec.keys.map(k => {
               const field = FIELDS.find(f => f.key === k);
@@ -1281,7 +1295,7 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
                     )
                     : field.type === "select"
                       ? <select style={css.input} value={form[k] || ""} onChange={e => set(k, e.target.value)}>
-                        <option value="">Select…</option>
+                        <option value="">Select</option>
                         {field.opts.map(o => <option key={o}>{o}</option>)}
                       </select>
                       : <input type={field.type} style={css.input} value={form[k] || ""} onChange={e => set(k, field.type === "number" ? e.target.value : e.target.value)} />
@@ -1293,6 +1307,52 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
           </div>
         </div>
       ))}
+
+      {/* ── Cases Editor ─────────────────────────────── */}
+      <div style={{ ...css.card, marginBottom: 16 }}>
+        <div style={css.label}>Cases (FIRs / Offenses)</div>
+        {(form.cases || []).map((c, i) => (
+          <div key={i} style={{ background: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 8, marginBottom: 10, position: 'relative' }}>
+            <button onClick={() => set("cases", form.cases.filter((_, idx) => idx !== i))} style={{ position: 'absolute', top: 8, right: 8, background: 'transparent', border: 'none', color: T.red, cursor: 'pointer' }}><X size={14} /></button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>FIR Number</div>
+                <input style={{ ...css.input, padding: 8 }} value={c.caseId || ''} onChange={e => { const nc = [...form.cases]; nc[i].caseId = e.target.value; set("cases", nc); }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>Date</div>
+                <input type="date" style={{ ...css.input, padding: 8 }} value={c.date || ''} onChange={e => { const nc = [...form.cases]; nc[i].date = e.target.value; set("cases", nc); }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>Offense</div>
+                <input style={{ ...css.input, padding: 8 }} value={c.offense || ''} onChange={e => { const nc = [...form.cases]; nc[i].offense = e.target.value; set("cases", nc); }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>Status</div>
+                <select style={{ ...css.input, padding: 8 }} value={c.status || ''} onChange={e => { const nc = [...form.cases]; nc[i].status = e.target.value; set("cases", nc); }}>
+                  <option value="">Select</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Under Investigation">Under Investigation</option>
+                  <option value="Charge Sheet Filed">Charge Sheet Filed</option>
+                  <option value="Convicted">Convicted</option>
+                  <option value="Acquitted">Acquitted</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>Court</div>
+              <input style={{ ...css.input, padding: 8 }} value={c.court || ''} onChange={e => { const nc = [...form.cases]; nc[i].court = e.target.value; set("cases", nc); }} />
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>Notes</div>
+              <textarea style={{ ...css.input, padding: 8, minHeight: 40 }} value={c.notes || ''} onChange={e => { const nc = [...form.cases]; nc[i].notes = e.target.value; set("cases", nc); }} />
+            </div>
+          </div>
+        ))}
+        <button onClick={() => set("cases", [...(form.cases || []), { caseId: '', date: '', offense: '', status: '', court: '', notes: '' }])} style={{ ...css.btn, width: '100%', fontSize: 12, padding: '10px' }}>
+          + Add Case
+        </button>
+      </div>
 
       {!isEdit && (
         <div style={{ ...css.card, marginBottom: 16 }}>
@@ -1307,7 +1367,7 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
 
       {/* Save button */}
       <button style={{ ...css.btnAccent, width: "100%", padding: "14px", fontSize: 14 }} onClick={handleSave} disabled={saving}>
-        <Save size={18} /> {saving ? "Saving…" : isEdit ? "Update Record" : "Save Record"}
+        <Save size={18} /> {saving ? "Saving" : isEdit ? "Update Record" : "Save Record"}
       </button>
       <button style={{ ...css.btn, width: "100%", padding: "12px", fontSize: 13, marginTop: 10 }} onClick={goBack}>
         Cancel
@@ -1316,7 +1376,7 @@ function AccusedForm({ record, onSave, goBack, activeDataSource, settings, getHu
   );
 }
 
-/* ─── Database Excel Grid View ──────────────────────────────────────── */
+/*  Database Excel Grid View  */
 function DatabaseGridView({ records, onUpdateDatabase }) {
   // Use fields except photo and notes for clean text grid
   const gridFields = FIELDS.filter(f => !["photo", "notes"].includes(f.key));
@@ -1360,7 +1420,7 @@ function DatabaseGridView({ records, onUpdateDatabase }) {
   };
 
   return (
-    <div style={{ padding: "72px 14px 80px", overflowX: "auto" }}>
+    <div style={{ padding: "72px 14px 14px", overflowX: "auto" }}>
       <div style={{ fontSize: 16, fontWeight: 700, color: T.accent, marginBottom: 8 }}>Database Excel View</div>
       <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>View and edit all existing records instantly. Add new rows at the bottom.</div>
 
@@ -1430,7 +1490,7 @@ function AnalyticsSection({ title, children }) {
   );
 }
 
-/* ─── Analytics ──────────────────────────────────────────────── */
+/*  Analytics  */
 function Analytics({ getAnalytics, records }) {
   const { byYear, byStatus, bySex, byArea } = getAnalytics();
   const total = records.length;
@@ -1536,37 +1596,42 @@ function Analytics({ getAnalytics, records }) {
   );
 }
 
-/* ─── Main App ───────────────────────────────────────────────── */
+/*  Main App  */
 function About() {
   return (
-    <div style={{ padding: "80px 24px 24px", textAlign: "center", color: T.text, minHeight: "100vh" }}>
-      <div style={{ marginBottom: 24, display: "flex", justifyContent: "center" }}>
-        <img src="/goatech-logo.jpg" alt="GOAT'ECH Logo" style={{ width: 80, height: 80, borderRadius: 16, border: `1px solid ${T.border}`, boxShadow: `0 0 30px rgba(108,60,255,0.2)` }} />
-      </div>
-      <h2 style={{ color: T.accent, fontSize: 24, marginBottom: 12 }}>CRIMETRACK PRO</h2>
-      <p style={{ color: T.muted, fontSize: 14, marginBottom: 32, lineHeight: 1.6 }}>
-        Offline, highly-secure accused tracking database for Law Enforcement.
-      </p>
-      <div style={{ ...css.card, textAlign: "left", padding: 24 }}>
-        <div style={{ fontSize: 11, color: T.accent, letterSpacing: "2px", textTransform: "uppercase", marginBottom: 8 }}>Founded By</div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>GOAT'ECH</div>
-        <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, marginBottom: 12 }}>
-          Founded by Magh's, GOAT'ECH is a technology company with a singular vision - to revolutionize daily digital utilities and build tools that genuinely improve people's lives.
+    <div style={{ padding: "72px 14px 86px", color: T.text, maxWidth: 780, margin: "0 auto" }}>
+      <div style={{ ...css.card, padding: 18, display: "grid", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <img src="/goattech-logo.jpg" alt="GOAT'ECH logo" style={{ width: 64, height: 64, borderRadius: 14, border: `1px solid ${T.border}`, objectFit: "cover" }} />
+          <div>
+            <div style={{ color: T.accent, fontSize: 12, fontWeight: 900, letterSpacing: 0, textTransform: "uppercase" }}>About GOAT'ECH</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: T.text, lineHeight: 1.1 }}>C.A.S.E by GOAT'ECH</div>
+            <div style={{ fontSize: 12, color: T.muted, marginTop: 5 }}>tech.goatech.crimetrack</div>
+          </div>
+        </div>
+
+        <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.65, margin: 0 }}>
+          GOAT'ECH builds practical digital tools for field teams, civic workflows, and secure record operations. C.A.S.E is designed as an independent police records workspace with local-first access, Firebase officer login, audit-friendly activity, and optional Google Sheets export.
         </p>
-        <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, marginBottom: 16 }}>
-          We believe in shipping fast, thinking boldly, and building things that last. From civic tech to social tools, our portfolio spans diverse domains with one constant: quality.
-        </p>
-        <div style={{ fontSize: 12, fontWeight: 600, color: T.accent2, marginBottom: 8, marginTop: 12 }}>PRODUCTS</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: 24 }}>
-          {['TN Voting', 'AquaDet', 'Toocs', 'Flames', 'Management'].map((prod, i) => (
-            <span key={i} style={{ background: 'rgba(108,60,255,0.1)', border: `1px solid ${T.accent}`, color: T.text, fontSize: 11, padding: "4px 10px", borderRadius: 100 }}>
-              {prod}
-            </span>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          {[
+            ["Company", "GOAT'ECH"],
+            ["Website", "goatech.tech"],
+            ["App", "C.A.S.E"],
+            ["Focus", "Secure operations tools"],
+          ].map(([label, value]) => (
+            <div key={label} style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12, background: T.card2 }}>
+              <div style={{ fontSize: 10, color: T.muted, textTransform: "uppercase", fontWeight: 800 }}>{label}</div>
+              <div style={{ fontSize: 13, color: T.text, fontWeight: 800, marginTop: 4 }}>{value}</div>
+            </div>
           ))}
         </div>
+
         <button
+          type="button"
           onClick={() => window.open("https://goatech.tech", "_blank")}
-          style={{ ...css.btnAccent, width: "100%", textDecoration: "none", fontSize: 13, display: "block", textAlign: "center" }}
+          style={{ ...css.btnAccent, width: "100%", justifyContent: "center" }}
         >
           Visit goatech.tech
         </button>
@@ -1607,7 +1672,7 @@ function NotificationsView({ notifications, clearNotifications }) {
 
 function DemoProfileView({ onExitDemo }) {
   return (
-    <div style={{ padding: "72px 14px 80px", maxWidth: 800, margin: "0 auto" }}>
+    <div style={{ padding: "72px 14px 14px", maxWidth: 800, margin: "0 auto" }}>
       <div style={{ ...css.card, textAlign: "center", padding: 24 }}>
         <Shield size={42} color={T.blue} />
         <div style={{ fontSize: 20, fontWeight: 900, color: T.text, marginTop: 12 }}>Demo Officer</div>
@@ -1622,19 +1687,197 @@ function DemoProfileView({ onExitDemo }) {
     </div>
   );
 }
-import docsHtml from '../public/docs.html?raw';
+import ReactMarkdown from 'react-markdown';
+import { BookOpen, ShieldAlert, Cpu } from 'lucide-react';
+
+const USER_MANUAL_CONTENT = `
+# C.A.S.E - User Manual & Documentation
+
+Welcome to C.A.S.E (Crime Analysis & Security Engine). This application is designed for field operatives and intelligence analysts.
+
+## 1. Getting Started
+- **Login**: Use your secure officer credentials or the demo mode.
+- **Biometrics**: Enable FaceID/TouchID in settings for quick access.
+- **Offline Mode**: The app works fully offline using an encrypted local database.
+
+## 2. Managing Accused Records
+- **Adding Records**: Tap the floating '+' button on the home screen.
+- **Multi-Case Tracking**: You can now add multiple FIRs/Offenses to a single accused record via the "Case History" section.
+- **Photo Uploads**: Use the camera for live captures or upload existing photos. High quality photos improve AI matching.
+
+## 3. AI & Analytics Features
+- **AI Smart Search**: Use natural language in the search bar (e.g., "show theft cases in 2024").
+- **Anomaly Detection**: Run the AI Anomaly Detector on the home screen to find suspicious patterns across the entire database.
+- **Threat Briefs**: On any accused profile, tap "Generate AI Threat Brief" for an instant intelligence summary.
+- **Pattern Analysis**: If an accused has 2 or more cases, the AI can analyze their escalation trend.
+
+## 4. Secure Operations Room
+- **P2P Encrypted**: Operations rooms use WebRTC for true peer-to-peer encrypted communication. No messages touch the server.
+- **Joining/Creating**: Share your Room ID and Passkey with your team.
+- **AI Briefing**: The AI can generate tactical briefings based on the suspects tagged in the room.
+
+## 5. Sync & Export
+- **Google Sheets**: Connect a Google Sheet in settings for cloud backup. The AI will generate a sync report after every sync.
+- **Excel Export**: Export the entire database to a local Excel file for analysis.
+
+## 6. Google Apps Script Setup (Database Sync)
+To connect a live Google Sheet, you must deploy a Google Apps Script to handle the data transfer.
+
+**Step 1: Prepare your Google Sheet**
+1. Create a Blank Spreadsheet.
+2. In Row 1, type the exact headers: \`id, name, age, sex, crimeType, location, status, photo, createdAt, updatedAt, officerName\`
+3. Row 1 must strictly be headers only.
+
+**Step 2: Add the Code**
+1. Click **Extensions > Apps Script**.
+2. Delete the empty code. Paste the exact code below:
+
+\`\`\`javascript
+var API_SECRET = "CHANGE_ME"; // Set your secret key here!
+
+function authenticate_(secret) {
+  if (API_SECRET && API_SECRET !== "CHANGE_ME" && secret !== API_SECRET) {
+    throw new Error("Unauthorized: Invalid API Secret Key");
+  }
+}
+
+function doGet(e) { 
+  try {
+    authenticate_(e.parameter && e.parameter.secret);
+    var action = (e.parameter && e.parameter.action) || 'read';
+    if (action === 'read_logs') return jsonResponse(handleReadLogs_());
+    return jsonResponse(handleRead_()); 
+  } catch (err) {
+    return jsonResponse({ status: 'error', message: String(err) });
+  }
+}
+
+function doPost(e) {
+  try {
+    var body = {};
+    if (e.postData && e.postData.contents) body = JSON.parse(e.postData.contents);
+    authenticate_(body.secret || (e.parameter && e.parameter.secret));
+
+    var action = (body.action || (e.parameter && e.parameter.action) || 'read').toLowerCase();
+
+    if (action === 'read') return jsonResponse(handleRead_());
+    if (action === 'read_logs') return jsonResponse(handleReadLogs_());
+    if (action === 'write' && body.records) return jsonResponse(handleWrite_(body.records));
+    if (action === 'log' && body.payload) return jsonResponse(handleLog_(body.payload));
+    
+    return jsonResponse({ status: 'error', message: 'Unknown action.' });
+  } catch (err) {
+    return jsonResponse({ status: 'error', message: String(err) });
+  }
+}
+
+function handleRead_() {
+  var sheet = getSheet_('Sheet1');
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { status: 'success', records: [], count: 0 };
+  
+  var keys = data[0];
+  var records = [];
+  for (var r = 1; r < data.length; r++) {
+    var rec = {};
+    for (var k = 0; k < keys.length; k++) {
+      rec[keys[k]] = data[r][k] != null ? String(data[r][k]) : '';
+    }
+    if (rec.id || rec.name || rec.encryptedData) records.push(rec);
+  }
+  return { status: 'success', records: records, count: records.length };
+}
+
+function handleWrite_(records) {
+  var sheet = getSheet_('Sheet1');
+  sheet.clear();
+  if (records.length === 0) return { status: 'success', message: 'Cleared records' };
+  
+  var keys = Object.keys(records[0]);
+  var rows = [keys];
+  for (var i = 0; i < records.length; i++) {
+    var row = [];
+    for (var k = 0; k < keys.length; k++) {
+      var v = records[i][keys[k]];
+      if (typeof v === 'object') v = JSON.stringify(v);
+      if (String(v).length > 49000) v = String(v).substring(0, 49000);
+      row.push(v != null ? v : '');
+    }
+    rows.push(row);
+  }
+  sheet.getRange(1, 1, rows.length, keys.length).setValues(rows);
+  return { status: 'success', message: 'Saved ' + records.length + ' records', count: records.length };
+}
+
+function handleLog_(payload) {
+  var sheet = getSheet_('Logs', true);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['Timestamp', 'Officer ID', 'Event', 'Details']);
+    sheet.setFrozenRows(1);
+  }
+  sheet.appendRow([payload.timestamp, payload.officerId, payload.event, payload.details]);
+  return { status: 'success', message: 'Log appended' };
+}
+
+function handleReadLogs_() {
+  var sheet = getSheet_('Logs', false);
+  if (!sheet) return { status: 'success', logs: [] };
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { status: 'success', logs: [] };
+  
+  var logs = [];
+  var start = Math.max(1, data.length - 20);
+  for (var r = start; r < data.length; r++) {
+    logs.push({
+      timestamp: data[r][0],
+      officerId: data[r][1],
+      event: data[r][2],
+      details: data[r][3]
+    });
+  }
+  return { status: 'success', logs: logs };
+}
+
+function getSheet_(name, createIfMissing) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet && createIfMissing) sheet = ss.insertSheet(name);
+  if (!sheet) sheet = ss.getActiveSheet();
+  return sheet;
+}
+
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+\`\`\`
+
+**Step 3: Deploy**
+1. Click the **Deploy** button (top right) > **New deployment**.
+2. Select type: **Web app**.
+3. Execute as: **Me**. Who has access: **Anyone**.
+4. Click Deploy > Authorize access > Advanced > Go to project (unsafe).
+5. Copy the generated **Web app URL** into CrimeTrack Settings.
+
+*Confidential - For Official Use Only*
+`;
 
 function DocsView() {
   return (
-    <div style={{ height: "100dvh", paddingTop: 60, paddingBottom: 68, boxSizing: "border-box", display: "flex", flexDirection: "column", overflow: "auto", background: "var(--ct-bg)" }}>
-      <div 
-        style={{ padding: "16px", color: "var(--ct-text)" }}
-        dangerouslySetInnerHTML={{ __html: docsHtml }} 
-      />
+    <div style={{ minHeight: "100dvh", padding: "72px 14px 84px", boxSizing: "border-box", display: "flex", flexDirection: "column", background: "var(--ct-bg)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+        <BookOpen size={24} color="var(--ct-accent)" />
+        <h1 style={{ fontSize: 24, margin: 0, color: "var(--ct-text)" }}>Documentation</h1>
+      </div>
+
+      <div style={{ ...css.card, padding: 24, overflowY: "auto", flex: 1, border: "1px solid color-mix(in srgb, var(--ct-accent) 20%, transparent)" }}>
+        <div className="markdown-body" style={{ color: "var(--ct-text)", lineHeight: 1.6 }}>
+          <ReactMarkdown>{USER_MANUAL_CONTENT}</ReactMarkdown>
+        </div>
+      </div>
     </div>
   );
 }
-function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHumanModel, activeDataSource, settings }) {
+function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHumanModel, releaseHumanModel, activeDataSource, settings }) {
   const [photoSrc, setPhotoSrc] = useState(null);
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState(null);
@@ -1642,9 +1885,18 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
   const scanLoopRef = useRef(null);
   const liveErrorRef = useRef(null);
   const [useCamera, setUseCamera] = useState(false);
+  const [photoMode, setPhotoMode] = useState(null);
+  const [humanInstance, setHumanInstance] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
   const [strictMode, setStrictMode] = useState(false);
   const strictModeRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      // Free RAM when leaving FaceSearch view
+      if (releaseHumanModel) releaseHumanModel();
+    };
+  }, [releaseHumanModel]);
 
   const toggleStrictMode = () => {
     const newVal = !strictMode;
@@ -1689,8 +1941,16 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
                     let normA = 0;
                     let normB = 0;
                     const a = queryEmbedding;
-                    const b = record.faceDescriptor;
-                    for (let i = 0; i < a.length; i++) {
+                    let b = record.faceDescriptor;
+                    if (typeof b === 'string') {
+                      try { b = JSON.parse(b); } catch (e) { /* ignore */ }
+                    }
+                    if (b && typeof b === 'object' && !Array.isArray(b)) {
+                      b = Object.values(b);
+                    }
+                    if (!b || !b.length) continue;
+
+                    for (let i = 0; i < Math.min(a.length, b.length); i++) {
                       dotProduct += a[i] * b[i];
                       normA += a[i] * a[i];
                       normB += b[i] * b[i];
@@ -1703,21 +1963,28 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
                   }
                 }
 
-                const threshold = strictModeRef.current ? 0.85 : 0.60;
+                const threshold = strictModeRef.current ? 0.85 : 0.75;
 
                 if (bestSimilarity >= threshold && bestMatch) {
                   captured = true;
                   if (liveErrorRef.current) {
-                    liveErrorRef.current.innerText = "Match Found! Unlocking...";
+                    liveErrorRef.current.innerText = "Match found. Opening record...";
                     liveErrorRef.current.style.color = "#4ade80";
                   }
                   if (activeDataSource !== "local") {
                     sendAuditLog(activeDataSource, settings, "FACE_MATCH", `Matched Suspect: ${bestMatch.name} (ID: ${bestMatch.id}) with ${(bestSimilarity * 100).toFixed(1)}% confidence`);
                   }
+                  const canvas = document.createElement("canvas");
+                  canvas.width = videoRef.current.videoWidth;
+                  canvas.height = videoRef.current.videoHeight;
+                  canvas.getContext("2d").drawImage(videoRef.current, 0, 0);
+                  const matchedFrameUrl = canvas.toDataURL("image/jpeg");
+
                   setTimeout(() => {
                     stopCamera();
                     setUseCamera(false);
-                    navigate("detail", { id: bestMatch.id });
+                    setPhotoSrc(matchedFrameUrl);
+                    setResult({ match: bestMatch, distance: 1 - bestSimilarity });
                   }, 600);
                   return;
                 } else {
@@ -1778,8 +2045,11 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
   useEffect(() => {
     let mounted = true;
     getHumanModel()
-      .then(() => {
-        if (mounted) setModelsLoaded(true);
+      .then((h) => {
+        if (mounted) {
+          setModelsLoaded(true);
+          setHumanInstance(h);
+        }
       })
       .catch((e) => {
         console.error("Failed to load Human AI models", e);
@@ -1791,86 +2061,66 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
     };
   }, [getHumanModel, setModelsLoaded]);
 
-  const handleUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPhotoSrc(reader.result);
-      runSearch(reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
 
-  const runSearch = async (imgSrc) => {
+
+  const runSearchWithDescriptor = async (queryEmbedding, imgSrc) => {
     setSearching(true);
     setResult(null);
-    const human = await getHumanModel();
-    setModelsLoaded(true);
+    setPhotoSrc(imgSrc);
 
-    const img = new Image();
-    img.src = imgSrc;
-    img.onload = async () => {
-      try {
-        const result = await human.detect(img);
-        if (!result || !result.face || result.face.length === 0 || !result.face[0].embedding) {
-          setSearching(false);
-          setResult({ error: "No face detected in the image. Please try a clearer photo." });
-          return;
+    let bestMatch = null;
+    let bestSimilarity = 0;
+    let missingFingerprints = true;
+
+    for (const record of records) {
+      if (record.faceDescriptor) {
+        missingFingerprints = false;
+
+        // Calculate Cosine Similarity manually for robust matching
+        let dotProduct = 0;
+        let normA = 0;
+        let normB = 0;
+        const a = queryEmbedding;
+        let b = record.faceDescriptor;
+        if (typeof b === 'string') {
+          try { b = JSON.parse(b); } catch (e) { /* ignore */ }
         }
-
-        const queryEmbedding = result.face[0].embedding;
-
-        let bestMatch = null;
-        let bestSimilarity = 0;
-        let missingFingerprints = true;
-
-        for (const record of records) {
-          if (record.faceDescriptor) {
-            missingFingerprints = false;
-
-            // Calculate Cosine Similarity manually for robust matching
-            let dotProduct = 0;
-            let normA = 0;
-            let normB = 0;
-            const a = queryEmbedding;
-            const b = record.faceDescriptor;
-            for (let i = 0; i < a.length; i++) {
-              dotProduct += a[i] * b[i];
-              normA += a[i] * a[i];
-              normB += b[i] * b[i];
-            }
-            const sim = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-
-            if (sim > bestSimilarity) {
-              bestSimilarity = sim;
-              bestMatch = record;
-            }
-          }
+        if (b && typeof b === 'object' && !Array.isArray(b)) {
+          b = Object.values(b);
         }
+        if (!b || !b.length) continue;
 
-        setSearching(false);
-        const similarityScore = (bestSimilarity * 100).toFixed(0);
-        const threshold = strictModeRef.current ? 0.85 : 0.60;
-
-        if (bestSimilarity >= threshold && bestMatch) {
-          setResult({ match: bestMatch, distance: 1 - bestSimilarity });
-          // Auto-navigate after a short delay like Samsung Face ID
-          setTimeout(() => {
-            navigate("detail", { id: bestMatch.id });
-          }, 1500);
-        } else {
-          if (missingFingerprints) {
-            setResult({ error: "No Database Fingerprints! Please Edit existing records and re-save their photos first." });
-          } else {
-            setResult({ error: `No Record Found. (Similarity score: ${similarityScore}% - requires ${threshold * 100}%)` });
-          }
+        for (let i = 0; i < Math.min(a.length, b.length); i++) {
+          dotProduct += a[i] * b[i];
+          normA += a[i] * a[i];
+          normB += b[i] * b[i];
         }
-      } catch (e) {
-        setSearching(false);
-        setResult({ error: "An error occurred during facial recognition analysis." });
+        const sim = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+
+        if (sim > bestSimilarity) {
+          bestSimilarity = sim;
+          bestMatch = record;
+        }
       }
-    };
+    }
+
+    setSearching(false);
+    const similarityScore = (bestSimilarity * 100).toFixed(0);
+    const threshold = strictMode ? 0.85 : 0.75;
+
+    if (bestSimilarity >= threshold && bestMatch) {
+      setResult({ match: bestMatch, distance: 1 - bestSimilarity });
+      // Auto-navigate after a short delay like Samsung Face ID
+      setTimeout(() => {
+        navigate("detail", { id: bestMatch.id });
+      }, 1500);
+    } else {
+      if (missingFingerprints) {
+        setResult({ error: "No Database Fingerprints! Please Edit existing records and re-save their photos first." });
+      } else {
+        setResult({ error: `No Record Found. (Similarity score: ${similarityScore}% - requires ${threshold * 100}%)` });
+      }
+    }
   };
 
   return (
@@ -1891,10 +2141,12 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
           </button>
 
           <div style={{ position: "relative" }}>
-            <button style={{ ...css.btn, padding: 16, fontSize: 16, width: "100%" }} onClick={() => document.getElementById("face-upload").click()}>
-              Upload Photo
+            <button style={{ ...css.btn, padding: 16, fontSize: 16, width: "100%", marginBottom: 12 }} onClick={() => setPhotoMode("camera")}>
+              Take Photo
             </button>
-            <input id="face-upload" type="file" accept="image/*" style={{ display: "none" }} onChange={handleUpload} />
+            <button style={{ ...css.btn, padding: 16, fontSize: 16, width: "100%" }} onClick={() => setPhotoMode("upload")}>
+              Upload from Gallery
+            </button>
           </div>
 
           <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, cursor: "pointer", marginTop: 8, padding: 12, border: `1px solid ${strictMode ? T.red : T.border}`, borderRadius: 12, background: strictMode ? "color-mix(in srgb, var(--ct-red) 12%, transparent)" : "transparent" }}>
@@ -1908,82 +2160,114 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
       )}
 
       {useCamera && (
-        <div style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <style>{`
-            @keyframes scan-pulse {
-              0% { box-shadow: 0 0 0 0 rgba(108,60,255,0.4); }
-              70% { box-shadow: 0 0 0 30px rgba(108,60,255,0); }
-              100% { box-shadow: 0 0 0 0 rgba(108,60,255,0); }
-            }
-          `}</style>
+        <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "space-between" }}>
 
-          <div style={{ color: "#000", fontSize: 18, marginBottom: 40, fontWeight: 700 }}>
-            Face Recognition
+          <video ref={videoRef} autoPlay playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: facingMode === "user" ? "scaleX(-1)" : "none", zIndex: 1 }} />
+
+          <div style={{ position: "absolute", top: "10%", left: 0, right: 0, zIndex: 2, display: "flex", justifyContent: "center" }}>
+            <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, textShadow: "0px 2px 4px rgba(0,0,0,0.8)" }}>
+              Face Recognition
+            </div>
           </div>
 
-          <div style={{
-            position: "relative",
-            width: "280px",
-            height: "280px",
-            borderRadius: "50%",
-            overflow: "hidden",
-            border: `6px solid ${T.accent}`,
-            animation: "scan-pulse 2s infinite",
-            background: "#000"
-          }}>
-            <video ref={videoRef} autoPlay playsInline style={{ position: "absolute", top: "-10%", left: "-10%", width: "120%", height: "120%", objectFit: "cover", display: "block", transform: "scaleX(-1) scale(1.3)" }} />
+          <div style={{ position: "absolute", inset: 0, zIndex: 3, pointerEvents: "none" }}>
+            <style>{`
+              @keyframes scan-pulse {
+                0% { border-color: rgba(108,60,255,0.4); }
+                50% { border-color: rgba(108,60,255,1); }
+                100% { border-color: rgba(108,60,255,0.4); }
+              }
+            `}</style>
+            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "260px", height: "360px", border: `3px solid ${T.accent}`, borderRadius: "160px", boxShadow: "0 0 0 4000px rgba(0,0,0,0.6)", animation: "scan-pulse 2s infinite" }} />
           </div>
 
-          <div ref={liveErrorRef} style={{ color: "#444", fontSize: 14, marginTop: 40, fontWeight: 600, minHeight: 24, textAlign: "center" }}>
-            Make sure your face is clearly visible
-          </div>
-
-          <div style={{ display: "flex", gap: 12, width: "100%", maxWidth: 360, marginTop: 40 }}>
-            <button style={{ ...css.btn, flex: 1, padding: 12, fontSize: 14, borderColor: "#000", color: "#000" }} onClick={() => startCamera(facingMode === "environment" ? "user" : "environment")}>
-              Flip Camera
-            </button>
-            <button style={{ ...css.btn, flex: 1, padding: 12, fontSize: 14, borderColor: T.red, color: T.red }} onClick={() => { stopCamera(); setUseCamera(false); }}>
-              Cancel
-            </button>
+          <div style={{ position: "absolute", bottom: "15%", left: 0, right: 0, zIndex: 4, display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+            <div ref={liveErrorRef} style={{ color: "#fff", fontSize: 14, fontWeight: 600, minHeight: 24, textAlign: "center", textShadow: "0px 2px 4px rgba(0,0,0,0.8)" }}>
+              Make sure your face is clearly visible
+            </div>
+            <div style={{ display: "flex", gap: 12, width: "100%", maxWidth: 300 }}>
+              <button style={{ ...css.btn, flex: 1, padding: 12, fontSize: 14, background: "rgba(255,255,255,0.2)", backdropFilter: "blur(10px)", color: "#fff", borderColor: "rgba(255,255,255,0.4)" }} onClick={() => startCamera(facingMode === "environment" ? "user" : "environment")}>
+                Flip Camera
+              </button>
+              <button style={{ ...css.btn, flex: 1, padding: 12, fontSize: 14, background: "rgba(255,0,0,0.2)", backdropFilter: "blur(10px)", color: "#fca5a5", borderColor: "rgba(255,0,0,0.4)" }} onClick={() => { stopCamera(); setUseCamera(false); }}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {photoSrc && (
-        <div style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <img src={photoSrc} style={{ width: "100%", borderRadius: 12, border: `2px solid ${T.accent}`, marginBottom: 16 }} />
+        <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
 
           {searching && (
-            <div style={{ color: T.accent, fontWeight: 600, padding: 16, textAlign: "center" }}>
-              Scanning Neural Network... Please wait.
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+              <img src={photoSrc} style={{ width: "100%", maxWidth: 200, borderRadius: 12, border: `2px solid ${T.accent}` }} />
+              <div style={{ color: T.accent, fontWeight: 600, textAlign: "center" }}>
+                Scanning Neural Network...
+              </div>
             </div>
           )}
 
           {result && result.error && (
-            <div style={{ ...css.card, background: "#450a0a", borderColor: T.red, color: "#fca5a5", textAlign: "center", padding: 16, width: "100%" }}>
-              {result.error}
-              <button style={{ ...css.btn, marginTop: 16, width: "100%" }} onClick={() => setPhotoSrc(null)}>Try Again</button>
+            <div style={{ width: "100%" }}>
+              <img src={photoSrc} style={{ width: "100%", borderRadius: 12, border: `2px solid ${T.red}`, marginBottom: 16 }} />
+              <div style={{ ...css.card, background: "#450a0a", borderColor: T.red, color: "#fca5a5", textAlign: "center", padding: 16 }}>
+                {result.error}
+                <button style={{ ...css.btn, marginTop: 16, width: "100%" }} onClick={() => setPhotoSrc(null)}>Try Again</button>
+              </div>
             </div>
           )}
 
           {result && result.match && (
-            <div style={{ ...css.card, background: "#064e3b", borderColor: T.green, color: "#6ee7b7", textAlign: "center", padding: 16, width: "100%" }}>
-              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Match Found!</div>
-              <div style={{ fontSize: 22, color: "#fff", fontWeight: 700 }}>{result.match.name}</div>
-              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 16 }}>REC-{result.match.id} (Confidence: {((1 - result.distance) * 100).toFixed(1)}%)</div>
-              <button style={{ ...css.btnAccent, width: "100%", marginBottom: 8 }} onClick={() => navigate("detail", { id: result.match.id })}>
-                View Full Record
-              </button>
-              <button style={{ ...css.btn, width: "100%" }} onClick={() => setPhotoSrc(null)}>Search Another</button>
+            <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ ...css.card, background: "#064e3b", borderColor: T.green, color: "#6ee7b7", textAlign: "center", padding: 16, width: "100%" }}>
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Match Confirmed!</div>
+                <div style={{ fontSize: 22, color: "#fff", fontWeight: 700, marginBottom: 4 }}>{result.match.name}</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>REC-{result.match.id} (Confidence: {((1 - result.distance) * 100).toFixed(1)}%)</div>
+              </div>
+
+              <div style={{ display: "flex", gap: 12, width: "100%" }}>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>Scanned Face</div>
+                  <img src={photoSrc} style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", borderRadius: 12, border: `2px solid ${T.border}` }} />
+                </div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: T.green }}>Database Record</div>
+                  <img src={result.match.photo} style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", borderRadius: 12, border: `3px solid ${T.green}` }} />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 12, width: "100%", marginTop: 8 }}>
+                <button style={{ ...css.btn, flex: 1 }} onClick={() => setPhotoSrc(null)}>New Scan</button>
+                <button style={{ ...css.btnAccent, flex: 1 }} onClick={() => navigate("detail", { id: result.match.id })}>Full Record</button>
+              </div>
             </div>
           )}
         </div>
+      )}
+      {photoMode && humanInstance && (
+        <PhotoUploaderModal
+          initialMode={photoMode}
+          onPhotoCapture={(base64Image, faceDesc) => {
+            setPhotoMode(null);
+            if (faceDesc) {
+              runSearchWithDescriptor(faceDesc, base64Image);
+            } else {
+              setPhotoSrc(base64Image);
+              setResult({ error: "No face detected in the photo. Try a closer or clearer shot." });
+            }
+          }}
+          onClose={() => setPhotoMode(null)}
+          humanInstance={humanInstance}
+          T={T}
+        />
       )}
     </div>
   );
 }
 
-/* ─── CompareView ────────────────────────────────────────────── */
+/*  CompareView  */
 function CompareView({ records }) {
   const [suspect1Id, setSuspect1Id] = useState("");
   const [suspect2Id, setSuspect2Id] = useState("");
@@ -2043,63 +2327,8 @@ function CompareView({ records }) {
   );
 }
 
-/* ─── PinManager ────────────────────────────────────────────── */
-function PinManager({ css, T, toastShow }) {
-  const [newPin, setNewPin] = useState("");
-  const [pinMsg, setPinMsg] = useState("");
-  const [hasPin, setHasPin] = useState(!!localStorage.getItem("crimetrack_pin"));
-
-  const savePin = () => {
-    if (newPin.length < 4) { setPinMsg("PIN must be at least 4 digits."); return; }
-    localStorage.setItem("crimetrack_pin", newPin);
-    setNewPin("");
-    setHasPin(true);
-    setPinMsg("✅ PIN updated! App will lock on next login.");
-    toastShow?.("PIN updated!", "success");
-  };
-
-  const removePin = () => {
-    localStorage.removeItem("crimetrack_pin");
-    setHasPin(false);
-    setPinMsg("🔓 PIN removed. App will open without a lock screen.");
-    toastShow?.("PIN removed", "success");
-  };
-
-  return (
-    <div style={{ ...css.card, display: "flex", flexDirection: "column", gap: 14, padding: 16, marginTop: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.accent }}>🔐 App PIN Lock</div>
-      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
-        {hasPin
-          ? "✅ PIN is active. The app will require your PIN on next login."
-          : "⚠️ No PIN set. The app opens without a lock screen."}
-      </div>
-      <input
-        type="password"
-        inputMode="numeric"
-        maxLength={8}
-        placeholder="New PIN (min 4 digits)"
-        value={newPin}
-        onChange={e => { setNewPin(e.target.value); setPinMsg(""); }}
-        onKeyDown={e => e.key === "Enter" && savePin()}
-        style={css.input}
-      />
-      <div style={{ display: "flex", gap: 10 }}>
-        <button style={{ ...css.btnAccent, flex: 1 }} onClick={savePin}>
-          {hasPin ? "Change PIN" : "Set PIN"}
-        </button>
-        {hasPin && (
-          <button style={{ ...css.btn, flex: 1, borderColor: T.red + "44", color: T.red }} onClick={removePin}>
-            Remove PIN
-          </button>
-        )}
-      </div>
-      {pinMsg && <div style={{ fontSize: 12, color: pinMsg.startsWith("✅") ? T.green : T.red }}>{pinMsg}</div>}
-    </div>
-  );
-}
-
-/* ─── SettingsView ───────────────────────────────────────────── */
-function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSource, onMigrateData, navigate }) {
+/*  SettingsView  */
+function SettingsView({ settings, saveSettings, toastShow, onSelectSource, onMigrateData, navigate }) {
   const [s, setS] = useState(() => ({
     ...settings,
     googleApiKey: settings.googleApiKey || settings.googleAPIKey || "",
@@ -2168,10 +2397,23 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
   const sheetsReady = webAppReady || !!parsedLink.sheetId;
 
   return (
-    <div style={{ padding: "72px 14px 80px" }}>
+    <div style={{ padding: "72px 14px 14px" }}>
       <div style={{ fontSize: 18, fontWeight: 700, color: T.accent, marginBottom: 8 }}>Settings</div>
-      <div style={{ fontSize: 11, color: T.muted, marginBottom: 20 }}>
-        Theme: {timeTheme?.label || "Auto"} ({timeTheme?.period || "—"})
+
+      <div style={{ ...css.card, marginBottom: 16, padding: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.accent, marginBottom: 12 }}>Theme Selection</div>
+        <select
+          style={css.input}
+          value={localStorage.getItem('crimetrack_theme') || 'ghost'}
+          onChange={e => {
+            localStorage.setItem('crimetrack_theme', e.target.value);
+            window.dispatchEvent(new Event('themeChanged'));
+          }}
+        >
+          {Object.entries(THEMES).map(([id, theme]) => (
+            <option key={id} value={id}>{theme.label}</option>
+          ))}
+        </select>
       </div>
 
       <button
@@ -2212,7 +2454,7 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
               <option value="database" disabled={!(settings?.dbApiUrl)}>Custom Database {(settings?.dbApiUrl) ? "" : "(Not Setup)"}</option>
             </select>
           </div>
-          <div style={{ color: T.muted, marginTop: 20 }}>→</div>
+          <div style={{ color: T.muted, marginTop: 20 }}></div>
           <div style={{ flex: 1 }}>
             <div style={css.label}>Migrate To</div>
             <select style={css.input} value={migrateTo} onChange={e => setMigrateTo(e.target.value)}>
@@ -2243,11 +2485,11 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
         </div>
 
         <div style={{ background: "rgba(16, 185, 129, 0.12)", padding: 12, borderRadius: 10, border: "1px solid rgba(16, 185, 129, 0.35)", marginBottom: 8 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#6ee7b7", marginBottom: 6 }}>Free — no Google Cloud API</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6ee7b7", marginBottom: 6 }}>Free  no Google Cloud API</div>
           <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.55 }}>
-            1. Open your sheet → <strong>Extensions → Apps Script</strong><br />
+            1. Open your sheet  <strong>Extensions  Apps Script</strong><br />
             2. Paste code from <code style={{ color: "#6ee7b7" }}>scripts/CrimeTrackGoogleWebApp.gs</code><br />
-            3. <strong>Deploy → Web app</strong> → access: <strong>Anyone</strong><br />
+            3. <strong>Deploy  Web app</strong>  access: <strong>Anyone</strong><br />
             4. Paste the Web App URL below
           </div>
         </div>
@@ -2263,12 +2505,12 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
             autoComplete="off"
           />
           {webAppReady && (
-            <div style={{ fontSize: 10, color: "var(--ct-green)", marginTop: 6 }}>Web App URL ready — no API key needed</div>
+            <div style={{ fontSize: 10, color: "var(--ct-green)", marginTop: 6 }}>Web App URL ready  no API key needed</div>
           )}
         </div>
 
         <div>
-          <label style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", display: "block", marginBottom: 6 }}>Google Sheet link (optional — open in browser)</label>
+          <label style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", display: "block", marginBottom: 6 }}>Google Sheet link (optional  open in browser)</label>
           <input
             style={{ ...css.input, borderColor: linkError ? "var(--ct-red)" : undefined }}
             placeholder="https://docs.google.com/spreadsheets/d/..."
@@ -2336,7 +2578,7 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
             {isAppsScriptConfigured(settings)
               ? "Connected via Apps Script (no Cloud API)"
               : "Connected via Cloud API key"}
-            {settings.enableGoogleSync ? " — auto sync on" : ""}
+            {settings.enableGoogleSync ? "  auto sync on" : ""}
           </div>
         )}
       </div>
@@ -2445,6 +2687,8 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
           <div style={{ fontSize: 10, color: "var(--ct-red)", marginTop: 6 }}>WARNING: Changing this key will render existing encrypted databases unreadable!</div>
         </div>
 
+
+
         <button
           style={css.btnAccent}
           onClick={() => {
@@ -2455,15 +2699,16 @@ function SettingsView({ settings, saveSettings, timeTheme, toastShow, onSelectSo
           Save Security Settings
         </button>
       </div>
-
-      {/* App PIN Lock */}
-      <PinManager css={css} T={T} toastShow={toastShow} />
     </div>
   );
 }
 
 
 export default function App() {
+  const [hasPremium, setHasPremium] = useState(false);
+
+
+
   const [records, setRecords] = useState([]);
 
   const [settings, setSettings] = useState(() => {
@@ -2481,6 +2726,7 @@ export default function App() {
       officerId: "",
       apiSecret: "",
       e2eKey: "",
+      geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyAZMmUoWuD5Droq6iDUhoLH6YMwCY0ACPo",
     };
     if (!raw) return defaults;
     try {
@@ -2490,7 +2736,11 @@ export default function App() {
       if (!parsed.googleSheetLink && parsed.googleSheetId) {
         parsed.googleSheetLink = `https://docs.google.com/spreadsheets/d/${parsed.googleSheetId}/edit`;
       }
-      return { ...defaults, ...parsed, useManualGoogleAPI: true };
+      const merged = { ...defaults, ...parsed, useManualGoogleAPI: true };
+      if (!merged.geminiApiKey) {
+        merged.geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyAZMmUoWuD5Droq6iDUhoLH6YMwCY0ACPo";
+      }
+      return merged;
     } catch {
       return defaults;
     }
@@ -2503,7 +2753,10 @@ export default function App() {
   };
 
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("dashboard");
+  const [showTerminalLoader, setShowTerminalLoader] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const getInitialView = () => 'dashboard';
+  const [view, setView] = useState(getInitialView());
   const [navStack, setNavStack] = useState([]);
 
   const [selectedId, setSelectedId] = useState(null);
@@ -2517,13 +2770,9 @@ export default function App() {
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [pinMode, setPinMode] = useState("none");
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState("");
-  const [pendingName, setPendingName] = useState(""); // officer name shown on PIN screen
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [timeTheme, setTimeTheme] = useState(() => {
-    const t = getTimeBasedTheme();
+    const t = getSelectedTheme();
     if (typeof document !== "undefined") {
       Object.entries(themeToCssVars(t)).forEach(([key, value]) => {
         document.documentElement.style.setProperty(key, value);
@@ -2541,6 +2790,7 @@ export default function App() {
   // Initialize Native Google Sign-In on app startup
   useEffect(() => {
     initializeNativeGoogleSignIn();
+    document.title = "CrimeTrack Police";
   }, []);
 
   const [showGoogleSync, setShowGoogleSync] = useState(false);
@@ -2551,12 +2801,16 @@ export default function App() {
   const isOnline = useNetworkStatus();
 
   useEffect(() => {
-    if (!auth || isDemoMode) return undefined;
+    if (!auth || isDemoMode) {
+      if (isDemoMode) setAuthLoading(false);
+      return undefined;
+    }
     return onAuthStateChanged(auth, async (user) => {
       if (!user || !user.emailVerified) {
         setCurrentUser(null);
         setProfile(null);
         setIsAuthenticated(false);
+        setAuthLoading(false);
         return;
       }
 
@@ -2587,6 +2841,7 @@ export default function App() {
         setProfile(null);
         setIsAuthenticated(false);
       }
+      setAuthLoading(false);
     });
   }, [isDemoMode]);
 
@@ -2654,18 +2909,34 @@ export default function App() {
 
         const freshLogs = await loadLogsForSource(activeDataSource, settings);
         if (freshLogs && Array.isArray(freshLogs) && freshLogs.length > 0) {
+
           const newLogs = freshLogs.filter(l => l.timestamp > lastSeenLogRef.current);
           if (newLogs.length > 0) {
             const maxTimestamp = newLogs.reduce((max, l) => l.timestamp > max ? l.timestamp : max, lastSeenLogRef.current);
             lastSeenLogRef.current = maxTimestamp;
 
             newLogs.forEach(log => {
-              if (log.officerId === settings.officerId) return; // Don't notify self
-              const msg = `${log.officerId || "An Officer"} performed: ${log.event}\n${log.details}`;
-              addNotification("Audit Log Alert", msg, "system");
-              if ("Notification" in window && Notification.permission === "granted") {
-                new Notification("C.A.S.E Alert", { body: msg, icon: "/icon.png" });
+              // ── TEAM NOTIFICATION from another officer ───────────────────────
+              if (log.event === 'TEAM_NOTIFICATION' && log.details?.startsWith('NOTIF|')) {
+                const parts = log.details.split('|');
+                // parts: ['NOTIF', officerName, officerId, actionType, recordName, photoUrl]
+                const [, officerName, officerId, actionType, recordName] = parts;
+                if (officerId === settings.officerId) return; // skip own broadcasts
+                const title = `C.A.S.E Team Alert`;
+                const body = `Officer ${officerName} ${actionType}: ${recordName}`;
+                // 1. Store locally so it appears in the in-app notification list
+                addNotification(title, body, 'sync');
+                // 2. Push to native Android/iOS notification bar immediately
+                triggerPushNotification(title, body);
+                // 3. Show the in-app floating banner for 5 seconds
+                setGlobalNotification({ officerName, officerPhoto: parts[5] || null, actionType, recordName, id: log.timestamp });
+                setTimeout(() => setGlobalNotification(null), 5000);
+                return;
               }
+              // ── Regular audit log entry (non-notification) ────────────────────
+              if (log.officerId === settings.officerId) return; // Don't notify self
+              const msg = `${log.officerName || log.officerId || 'An Officer'}: ${log.event} — ${(log.details || '').substring(0, 60)}`;
+              addNotification('Audit Log', msg, 'system');
             });
           }
         }
@@ -2673,21 +2944,44 @@ export default function App() {
         // Silently fail for background sync to avoid spamming toasts
         console.warn("Background sync failed:", e);
       }
-    }, 15000); // 15 second interval
+    }, getDeviceRAM() <= 4 ? 60000 : 30000); // 60s or 30s based on RAM
     return () => clearInterval(intervalId);
   }, [activeDataSource, settings, isOnline]);
 
   useEffect(() => {
     loadData();
-    // Note: PIN lock is triggered by handleLoginSuccess via Firebase onAuthStateChanged
     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
       Notification.requestPermission();
     }
 
-    // Update time-based theme every minute
-    const themeInterval = setInterval(() => setTimeTheme(getTimeBasedTheme()), 60000);
+    // Listen for theme changes from Settings
+    const handleStorageChange = () => setTimeTheme(getSelectedTheme());
+    window.addEventListener('themeChanged', handleStorageChange);
 
     if (Capacitor.isNativePlatform()) {
+      // Keep the Android status bar hidden so the battery percentage bar never overlaps the app.
+      StatusBar.hide().catch(() => { });
+      // Set transparent background for status bar to avoid visual artifacts
+      try {
+        StatusBar.setBackgroundColor({ color: '#00000000' }).catch(() => { });
+        StatusBar.setStyle({ style: 'DARK' }).catch(() => { });
+      } catch (e) { console.warn(e); }
+      CapApp.addListener('resume', () => {
+        StatusBar.hide().catch(() => { });
+        try {
+          StatusBar.setBackgroundColor({ color: '#00000000' }).catch(() => { });
+        } catch (e) { console.warn(e); }
+      });
+      LocalNotifications.createChannel?.({
+        id: "case-alerts",
+        name: "C.A.S.E Alerts",
+        description: "Police record and operations alerts",
+        importance: 5,
+        visibility: 1,
+        sound: "default",
+      })?.catch?.(() => { });
+      LocalNotifications.requestPermissions().catch(() => { });
+
       CapApp.addListener('backButton', () => {
         setNavStack(currentStack => {
           if (currentStack.length > 0) {
@@ -2704,50 +2998,55 @@ export default function App() {
       });
     }
     return () => {
-      clearInterval(themeInterval);
+      window.removeEventListener('themeChanged', handleStorageChange);
       if (Capacitor.isNativePlatform()) {
         CapApp.removeAllListeners();
       }
     };
     // This startup effect is intentionally mount-only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+  }, []);
 
   const [globalNotification, setGlobalNotification] = useState(null);
   const [listenStart] = useState(() => new Date());
 
-  const broadcastNotification = async (actionType, recordName) => {
-    if (!db || !currentUser || !isAuthenticated || isDemoMode) return;
+  const triggerPushNotification = async (title, body) => {
+    if (!Capacitor.isNativePlatform()) return;
     try {
-      await addDoc(collection(db, 'global_notifications'), {
-        actionType,
-        recordName,
-        officerName: profile?.name || currentUser.email,
-        officerPhoto: profile?.photoUrl || null,
-        officerId: currentUser.uid,
-        timestamp: serverTimestamp()
+      const perm = await LocalNotifications.checkPermissions();
+      const granted = perm.display === 'granted' ? perm : await LocalNotifications.requestPermissions();
+      if (granted.display !== 'granted') return;
+      await LocalNotifications.schedule({
+        notifications: [{
+          title,
+          body,
+          id: new Date().getTime(),
+          schedule: { at: new Date(Date.now() + 100) },
+          channelId: "case-alerts",
+          sound: "default",
+          actionTypeId: "",
+          extra: { source: "case" },
+        }]
       });
-    } catch (err) {
-      console.warn("Failed to broadcast notification", err);
-    }
+    } catch (e) { console.warn("Push notification failed", e); }
   };
 
-  useEffect(() => {
-    if (!isAuthenticated || !db || isDemoMode) return;
-    const q = query(collection(db, 'global_notifications'), where('timestamp', '>', listenStart), orderBy('timestamp', 'desc'), limit(1));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const data = change.doc.data();
-          if (data.officerId !== currentUser?.uid) {
-            setGlobalNotification({ ...data, id: change.doc.id });
-            setTimeout(() => setGlobalNotification(null), 5000);
-          }
-        }
-      });
-    });
-    return () => unsubscribe();
-  }, [isAuthenticated, listenStart, currentUser, isDemoMode]);
+  // Broadcast a notification to ALL officers using the same shared data source
+  // (Google Sheet or Database). This writes a special NOTIF_ audit log entry
+  // that other officers' apps will pick up during their next background poll.
+  const broadcastNotification = async (actionType, recordName) => {
+    if (isDemoMode || !isAuthenticated) return;
+    const source = activeDataSource;
+    if (source === 'local') return; // Local-only — no team to notify
+    const officerName = profile?.name || currentUser?.email || 'An Officer';
+    const officerId = settings.officerId || currentUser?.uid || 'unknown';
+    const details = `NOTIF|${officerName}|${officerId}|${actionType}|${recordName}|${profile?.photoUrl || ''}`;
+    try {
+      await sendAuditLog(source, settings, 'TEAM_NOTIFICATION', details);
+    } catch (err) {
+      console.warn('Failed to broadcast team notification', err);
+    }
+  };
 
   const loadData = () => {
     try {
@@ -2776,7 +3075,7 @@ export default function App() {
     setProfile(DEMO_PROFILE);
     setIsAuthenticated(true);
     setRecords(DEMO_RECORDS);
-    setView("dashboard");
+    setView(getInitialView());
     setNavStack([]);
     setSelectedId(null);
     setEditingRecord(null);
@@ -2788,7 +3087,7 @@ export default function App() {
     setIsAuthenticated(false);
     setCurrentUser(null);
     setProfile(null);
-    setView("dashboard");
+    setView(getInitialView());
     setNavStack([]);
     loadData();
   };
@@ -2902,12 +3201,55 @@ export default function App() {
     }
   };
 
-  // Called after correct PIN verify/setup — actually unlocks the app
-  const unlockAfterPin = (user, officerProfile) => {
+  const navigate = (newView, params = {}) => {
+    const restrictedViews = new Set(["form", "grid", "livegrid", "databasegrid", "settings", "sheets", "operations"]);
+    if (isDemoMode && restrictedViews.has(newView)) {
+      showDemoRestriction("This tool");
+      return;
+    }
+    setNavStack(s => [...s, { view, selectedId, editingRecord }]);
+    setView(newView);
+    if (params.id !== undefined) setSelectedId(params.id);
+    if ("record" in params) setEditingRecord(params.record);
+  };
+
+  const goBack = () => {
+    if (!navStack.length) { setView(getInitialView()); return; }
+    const prev = navStack[navStack.length - 1];
+    setNavStack(s => s.slice(0, -1));
+    setView(prev.view);
+    setSelectedId(prev.selectedId);
+    setEditingRecord(prev.editingRecord);
+  };
+
+  const navTo = (target) => {
+    const restrictedViews = new Set(["form", "grid", "livegrid", "databasegrid", "settings", "sheets", "operations", "hq", "os_root"]);
+
+    if (isDemoMode && restrictedViews.has(target)) {
+      showDemoRestriction();
+      return;
+    }
+
+    if (view === target) return;
+
+
+    setNavStack([]);
+    setView(target);
+    setSelectedId(null);
+    setEditingRecord(null);
+    setSearchQuery("");
+  };
+
+  const toast_show = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleLoginSuccess = (user, officerProfile) => {
+    setIsDemoMode(false);
+    setCurrentUser(user);
+    setProfile(officerProfile || null);
     setIsAuthenticated(true);
-    setPinMode("none");
-    setPinInput("");
-    setPinError("");
     if (officerProfile) {
       setSettings((current) => {
         const next = {
@@ -2922,96 +3264,6 @@ export default function App() {
     }
   };
 
-  // Refs to carry user/profile through the PIN flow
-  const pendingUserRef = useRef(null);
-  const pendingProfileRef = useRef(null);
-
-  const handlePinSubmit = () => {
-    const user = pendingUserRef.current;
-    const officerProfile = pendingProfileRef.current;
-    if (pinMode === "setup") {
-      if (pinInput.length < 4) {
-        setPinError("PIN must be at least 4 digits.");
-        return;
-      }
-      localStorage.setItem("crimetrack_pin", pinInput);
-      unlockAfterPin(user, officerProfile);
-    } else if (pinMode === "verify") {
-      const savedPin = localStorage.getItem("crimetrack_pin");
-      if (pinInput === savedPin) {
-        unlockAfterPin(user, officerProfile);
-      } else {
-        setPinError("Incorrect PIN. Try again.");
-        setPinInput("");
-      }
-    }
-  };
-
-  // Skip PIN (only during setup — officer chooses not to use PIN lock)
-  const handleSkipPin = () => {
-    const user = pendingUserRef.current;
-    const officerProfile = pendingProfileRef.current;
-    localStorage.removeItem("crimetrack_pin");
-    unlockAfterPin(user, officerProfile);
-  };
-
-  const navigate = (newView, params = {}) => {
-    const restrictedViews = new Set(["form", "grid", "livegrid", "databasegrid", "settings", "sheets", "operations"]);
-    if (isDemoMode && restrictedViews.has(newView)) {
-      showDemoRestriction("This tool");
-      return;
-    }
-    setNavStack(s => [...s, { view, selectedId, editingRecord }]);
-    setView(newView);
-    if (params.id !== undefined) setSelectedId(params.id);
-    if ("record" in params) setEditingRecord(params.record);
-  };
-
-  const goBack = () => {
-    if (!navStack.length) { setView("dashboard"); return; }
-    const prev = navStack[navStack.length - 1];
-    setNavStack(s => s.slice(0, -1));
-    setView(prev.view);
-    setSelectedId(prev.selectedId);
-    setEditingRecord(prev.editingRecord);
-  };
-
-  const navTo = (tab) => {
-    const restrictedTabs = new Set(["operations", "sheets"]);
-    if (isDemoMode && restrictedTabs.has(tab)) {
-      showDemoRestriction(tab === "operations" ? "Secure operations room" : "Google Sheets");
-      return;
-    }
-    setNavStack([]); setView(tab); setSelectedId(null); setEditingRecord(null);
-    setSearchQuery("");
-  };
-
-  const toast_show = (msg, type = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const handleLoginSuccess = (user, officerProfile) => {
-    setIsDemoMode(false);
-    setCurrentUser(user);
-    setProfile(officerProfile || null);
-    setPendingName(officerProfile?.name || user?.email || "");
-    // Store pending credentials for the PIN flow
-    pendingUserRef.current = user;
-    pendingProfileRef.current = officerProfile || null;
-    setPinInput("");
-    setPinError("");
-    // Check if officer has set a PIN
-    const savedPin = localStorage.getItem("crimetrack_pin");
-    if (savedPin) {
-      // PIN exists — ask them to verify it before unlocking
-      setPinMode("verify");
-    } else {
-      // No PIN yet — ask them to set one (can skip)
-      setPinMode("setup");
-    }
-  };
-
   const addRecord = async (r, targetSource = activeDataSource) => {
     if (!requireLiveSession("Adding records")) return;
     // Preserve existing id if record comes from OperationsRoom (already has one)
@@ -3019,6 +3271,9 @@ export default function App() {
     if (targetSource === activeDataSource) {
       await persist([...records, rec]);
       toast_show("Record added");
+      addNotification("Record Added", `Successfully saved ${rec.name} to ${SOURCE_UI[targetSource]?.label || targetSource}.`, "system");
+      broadcastNotification("added record", rec.name || "Unknown");
+      triggerPushNotification("Record Added", `You added: ${rec.name || "Unknown"}`);
       // Don't navigate away if currently in Operations Room
       if (view !== "operations") goBack();
     } else {
@@ -3042,6 +3297,7 @@ export default function App() {
         toast_show(`Record added to ${SOURCE_UI[targetSource]?.label || targetSource}`);
         addNotification("Record Added", `Successfully saved ${rec.name} to ${SOURCE_UI[targetSource]?.label || targetSource}.`, "system");
         broadcastNotification("added record", rec.name || "Unknown");
+        triggerPushNotification("Record Added", `You added: ${rec.name || "Unknown"}`);
         if (view !== "operations") goBack();
       } catch (err) {
         toast_show(err.message || "Save failed", "danger");
@@ -3056,7 +3312,7 @@ export default function App() {
   };
   const updateRecord = async (r) => {
     if (!requireLiveSession("Editing records")) return;
-    await persist(records.map(x => x.id === r.id ? { ...r, updatedAt: new Date().toISOString() } : x)); toast_show("Record updated"); addNotification("Record Updated", `Successfully updated ${r.name}.`, "system"); 
+    await persist(records.map(x => x.id === r.id ? { ...r, updatedAt: new Date().toISOString() } : x)); toast_show("Record updated"); addNotification("Record Updated", `Successfully updated ${r.name}.`, "system");
     broadcastNotification("updated record", r.name || "Unknown");
     goBack();
   };
@@ -3202,7 +3458,7 @@ export default function App() {
   const handleExportExcel = async () => {
     if (!requireLiveSession("Exporting Excel")) return;
     toast_show("Generating Excel file...");
-      try {
+    try {
       const { default: ExcelJS } = await import("exceljs");
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet("Records");
@@ -3317,7 +3573,7 @@ export default function App() {
   const generateAndSharePDF = async (record, actionType = 'share') => {
     if (!requireLiveSession("PDF export and sharing")) return;
     toast_show("Generating PDF...");
-      try {
+    try {
       const [{ jsPDF }, { default: autoTable }] = await Promise.all([
         import("jspdf"),
         import("jspdf-autotable"),
@@ -3387,12 +3643,22 @@ export default function App() {
         const fileName = `C.A.S.E_${record.name.replace(/\s+/g, '_')}_${record.id}.pdf`;
 
         if (actionType === 'download') {
-          await Filesystem.writeFile({
+          const savedFile = await Filesystem.writeFile({
             path: fileName,
             data: base64,
             directory: Directory.Documents
           });
           toast_show(`PDF saved to Documents/${fileName}`);
+
+          if (confirm("PDF exported successfully. Do you want to open it?")) {
+            try {
+              const { FileOpener } = await import('@capawesome-team/capacitor-file-opener');
+              await FileOpener.openFile({ path: savedFile.uri });
+            } catch (err) {
+              console.error("Error opening file:", err);
+              toast_show("Could not open PDF file.", "danger");
+            }
+          }
         } else {
           const savedFile = await Filesystem.writeFile({
             path: fileName,
@@ -3411,8 +3677,12 @@ export default function App() {
           }
         }
       } else {
-        doc.save(`C.A.S.E_${record.name.replace(/\\s+/g, '_')}.pdf`);
+        doc.save(`C.A.S.E_${record.name.replace(/\s+/g, '_')}.pdf`);
         toast_show("PDF downloaded.");
+        if (confirm("PDF exported successfully. Do you want to open it in a new tab?")) {
+          const blobUrl = doc.output('bloburl');
+          window.open(blobUrl, '_blank');
+        }
       }
     } catch (err) {
       console.error(err);
@@ -3442,90 +3712,31 @@ export default function App() {
     className: "ct-app",
     style: {
       ...themeToCssVars(timeTheme),
-      minHeight: "100vh",
-      backgroundColor: timeTheme.bgColor,
-      backgroundImage: timeTheme.gradient,
+      minHeight: "100dvh",
+      backgroundColor: !isAuthenticated ? "#050505" : timeTheme.bgColor,
+      backgroundImage: !isAuthenticated ? "none" : timeTheme.gradient,
       backgroundSize: "cover",
       backgroundAttachment: "fixed",
     },
   };
 
-  if (loading) return (
+  if (loading || authLoading || showTerminalLoader) return (
     <div {...shellBg}>
-      <div className="ct-ambient" aria-hidden />
-      <div className="ct-scrim" aria-hidden />
-      <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div className="ct-glass" style={{ ...css.card, textAlign: "center", maxWidth: 360, width: "100%" }}>
-          <Shield size={48} color={timeTheme.accentColor} />
-          <div className="ct-title" style={{ fontSize: 18, fontWeight: 800, marginTop: 12 }}>C.A.S.E</div>
-          <div className="ct-muted" style={{ fontSize: 13, marginTop: 8 }}>Loading offline database...</div>
-        </div>
-      </div>
-    </div>
-  );
-
-  if (!isAuthenticated && pinMode !== "none") return (
-    <div {...shellBg}>
-      <div className="ct-ambient" aria-hidden />
-      <div className="ct-scrim" aria-hidden />
-      <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div className="ct-glass" style={{ ...css.card, textAlign: "center", maxWidth: 360, width: "100%" }}>
-          <Shield size={56} color={timeTheme.accentColor} />
-          <div className="ct-title" style={{ fontSize: 20, fontWeight: 800, marginTop: 12 }}>C.A.S.E</div>
-          <div style={{ color: "var(--ct-muted)", fontSize: 13, marginTop: 6 }}>
-            {pinMode === "setup"
-              ? "Create a PIN to lock the app when you return"
-              : `Welcome back, ${pendingName || "Officer"}`}
-          </div>
-          <div style={{ color: "var(--ct-text)", fontSize: 14, marginTop: 10, fontWeight: 600 }}>
-            {pinMode === "setup" ? "Set a 4-digit PIN" : "Enter your PIN to unlock"}
-          </div>
-          <input
-            type="password"
-            inputMode="numeric"
-            value={pinInput}
-            onChange={e => { setPinInput(e.target.value); setPinError(""); }}
-            onKeyDown={e => e.key === "Enter" && handlePinSubmit()}
-            maxLength={8}
-            autoFocus
-            style={{ ...css.input, textAlign: "center", fontSize: 28, letterSpacing: 10, width: "100%", maxWidth: 220, margin: "16px auto 0" }}
-            placeholder="••••"
-          />
-          {pinError && (
-            <div style={{ color: "var(--ct-red)", fontSize: 13, marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              ⚠ {pinError}
+      {showTerminalLoader ? (
+        <TerminalLoader onComplete={() => setShowTerminalLoader(false)} />
+      ) : (
+        <>
+          <div className="ct-ambient" aria-hidden />
+          <div className="ct-scrim" aria-hidden />
+          <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <div className="ct-glass" style={{ ...css.card, textAlign: "center", maxWidth: 360, width: "100%" }}>
+              <Shield size={48} color={timeTheme.accentColor} />
+              <div className="ct-title" style={{ fontSize: 18, fontWeight: 800, marginTop: 12 }}>C.A.S.E</div>
+              <div className="ct-muted" style={{ fontSize: 13, marginTop: 8 }}>Loading offline database...</div>
             </div>
-          )}
-          <button style={{ ...css.btnAccent, width: "100%", marginTop: 16, fontSize: 15, padding: "14px" }} onClick={handlePinSubmit}>
-            <Lock size={18} /> {pinMode === "setup" ? "Set PIN & Unlock" : "Unlock App"}
-          </button>
-          {pinMode === "setup" && (
-            <button
-              style={{ background: "none", border: "none", color: "var(--ct-muted)", fontSize: 13, marginTop: 12, cursor: "pointer", textDecoration: "underline" }}
-              onClick={handleSkipPin}
-            >
-              Skip — don't use a PIN
-            </button>
-          )}
-          {pinMode === "verify" && (
-            <button
-              style={{ background: "none", border: "none", color: "var(--ct-muted)", fontSize: 12, marginTop: 12, cursor: "pointer" }}
-              onClick={() => {
-                // Forgot PIN — remove it and require Firebase re-login
-                localStorage.removeItem("crimetrack_pin");
-                localStorage.removeItem("crimetrack_auth_profile");
-                setPinMode("none");
-                setCurrentUser(null);
-                setProfile(null);
-                pendingUserRef.current = null;
-                pendingProfileRef.current = null;
-              }}
-            >
-              Forgot PIN? Reset (requires login again)
-            </button>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -3558,12 +3769,12 @@ export default function App() {
           isDemoMode={isDemoMode}
         />
       );
-      case "facesearch": return <FaceSearch records={records} navigate={navigate} modelsLoaded={modelsLoaded} setModelsLoaded={setModelsLoaded} getHumanModel={getHumanModel} activeDataSource={activeDataSource} settings={settings} />;
+      case "facesearch": return <FaceSearch records={records} navigate={navigate} modelsLoaded={modelsLoaded} setModelsLoaded={setModelsLoaded} getHumanModel={getHumanModel} releaseHumanModel={releaseHumanModel} activeDataSource={activeDataSource} settings={settings} />;
       case "notifications": return <NotificationsView notifications={notifications} clearNotifications={clearNotifications} />;
       case "list": return <AccusedList records={getFiltered()} allRecords={records} navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} filters={filters} setFilters={setFilters} showFilters={showFilters} setShowFilters={setShowFilters} />;
       case "compare": return <CompareView records={records} />;
       case "detail": return selectedRecord ? <AccusedDetail record={selectedRecord} records={records} navigate={navigate} onDelete={id => isDemoMode ? showDemoRestriction("Deleting records") : setDeleteConfirm(id)} onSharePDF={generateAndSharePDF} onQuickUpdate={quickUpdateRecord} isDemoMode={isDemoMode} /> : <div style={{ padding: 80, textAlign: "center", color: T.muted }}>Record not found</div>;
-      case "form": return <AccusedForm record={editingRecord} onSave={editingRecord ? updateRecord : addRecord} goBack={goBack} activeDataSource={activeDataSource} settings={settings} getHumanModel={getHumanModel} />;
+      case "form": return <AccusedForm record={editingRecord} onSave={editingRecord ? updateRecord : addRecord} goBack={goBack} activeDataSource={activeDataSource} settings={settings} getHumanModel={getHumanModel} releaseHumanModel={releaseHumanModel} />;
       case "databasegrid": return <DatabaseGridView records={records} onUpdateDatabase={updateEntireDatabase} />;
       case "grid":
       case "livegrid": return (
@@ -3585,7 +3796,9 @@ export default function App() {
       case "advanced-analytics": return <AdvancedAnalyticsDashboard records={records} theme={timeTheme} css={css} />;
       case "docs": return <DocsView />;
       case "sheets": return <GoogleSheetsView sheetsData={records} isLoading={false} lastSyncTime={null} onRefresh={async () => { const r = await loadRecordsForSource("google", settings); if (r) setRecords(r); }} toastShow={toast_show} />;
-      case "operations": return isDemoMode ? <DemoProfileView onExitDemo={exitDemoMode} /> : <OperationsRoom currentUser={currentUser} profile={profile} records={records} getHumanModel={getHumanModel} onAddRecord={addRecord} onDeleteRecord={(id) => setDeleteConfirm(id)} />;
+      case "operations": return null; // Rendered persistently outside
+      // Government Servant Modules
+      case "intel": return <PoliceIntelligenceEngine currentUser={currentUser} profile={settings} records={records} />;
       case "profile": return (
         isDemoMode ? <DemoProfileView onExitDemo={exitDemoMode} /> : <ProfileView
           currentUser={currentUser}
@@ -3635,6 +3848,9 @@ export default function App() {
         transition: "background-color 0.8s ease, background-image 0.8s ease",
       }}
     >
+      <Suspense fallback={null}>
+        <AICopilot settings={settings} records={records} />
+      </Suspense>
       {globalNotification && (
         <div style={{
           position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)",
@@ -3662,12 +3878,17 @@ export default function App() {
       )}
       <div className="ct-ambient" aria-hidden />
       <div className="ct-scrim" aria-hidden />
-      <div className="ct-content" style={{ ...css.page, paddingBottom: 80, height: "auto", overflow: "visible" }}>
+      <div className="ct-content" style={css.page}>
         <Header view={view} goBack={goBack} navStack={navStack} title={headerTitle} timeTheme={timeTheme} isOnline={isOnline} navigate={navigate} />
         <Suspense fallback={<ModuleLoader />}>
           {renderView()}
         </Suspense>
-        <BottomNav view={view} navTo={navTo} navigate={navigate} isGoogleSheetsAuthenticated={!isDemoMode && isGoogleSheetsConfigured(settings)} isDemoMode={isDemoMode} onRestrictedAction={showDemoRestriction} />
+        {isAuthenticated && !isDemoMode && (
+          <div style={{ display: view === "operations" ? "block" : "none", width: "100%", height: "100%" }}>
+            <OperationsRoom currentUser={currentUser} profile={profile} records={records} getHumanModel={getHumanModel} releaseHumanModel={releaseHumanModel} onAddRecord={addRecord} onDeleteRecord={deleteRecord} />
+          </div>
+        )}
+        {view === "operations" && isDemoMode && <DemoProfileView onExitDemo={exitDemoMode} />}
         {toast && <Toast msg={toast.msg} type={toast.type} />}
         {deleteConfirm && <ConfirmDialog msg="Delete this record permanently? This cannot be undone." onConfirm={() => deleteRecord(deleteConfirm)} onCancel={() => setDeleteConfirm(null)} />}
         {showGoogleSync && (
@@ -3701,6 +3922,7 @@ export default function App() {
           </Suspense>
         )}
       </div>
+      <FloatingNav view={view} navTo={navTo} navigate={navigate} isDemoMode={isDemoMode} onRestrictedAction={showDemoRestriction} />
     </div>
   );
 }

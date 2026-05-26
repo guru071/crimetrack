@@ -24,7 +24,7 @@ export function decryptRecord(record, e2eKey) {
     const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
     if (!decryptedString) throw new Error("Bad password or corrupted data");
     const decryptedObj = JSON.parse(decryptedString);
-    
+
     // Merge back id and dates just in case
     return {
       ...decryptedObj,
@@ -37,7 +37,7 @@ export function decryptRecord(record, e2eKey) {
     // Return a dummy record so it doesn't crash the UI
     return {
       id: record.id,
-      name: "🔒 ENCRYPTED RECORD",
+      name: " ENCRYPTED RECORD",
       notes: "Decryption failed. Incorrect End-to-End Encryption Key?",
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
