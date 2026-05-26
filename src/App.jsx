@@ -2261,6 +2261,7 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
           onClose={() => setPhotoMode(null)}
           humanInstance={humanInstance}
           T={T}
+          css={css}
         />
       )}
     </div>
