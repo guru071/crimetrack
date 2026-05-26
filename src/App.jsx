@@ -2014,7 +2014,7 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
               }
 
               if (!captured) {
-                scanLoopRef.current = requestAnimationFrame(scan);
+                scanLoopRef.current = setTimeout(scan, 600);
               }
             }
           };
@@ -2028,7 +2028,7 @@ function FaceSearch({ records, navigate, modelsLoaded, setModelsLoaded, getHuman
   };
 
   const stopCamera = () => {
-    if (scanLoopRef.current) cancelAnimationFrame(scanLoopRef.current);
+    if (scanLoopRef.current) clearTimeout(scanLoopRef.current);
     if (videoRef.current && videoRef.current.srcObject) {
       videoRef.current.srcObject.getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;

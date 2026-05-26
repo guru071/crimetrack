@@ -18,7 +18,7 @@ export default function FaceScannerModal({ records, getHumanModel, onMatch, onCl
       if (!file) return;
       
       // Stop camera if running
-      if (scanLoopRef.current) cancelAnimationFrame(scanLoopRef.current);
+      if (scanLoopRef.current) clearTimeout(scanLoopRef.current);
       if (videoRef.current && videoRef.current.srcObject) {
         videoRef.current.srcObject.getTracks().forEach(t => t.stop());
       }
@@ -137,7 +137,7 @@ export default function FaceScannerModal({ records, getHumanModel, onMatch, onCl
                 }
               }
               if (!captured) {
-                scanLoopRef.current = requestAnimationFrame(scan);
+                scanLoopRef.current = setTimeout(scan, 600);
               }
             };
             scan();
@@ -153,7 +153,7 @@ export default function FaceScannerModal({ records, getHumanModel, onMatch, onCl
 
     return () => {
       captured = true;
-      if (scanLoopRef.current) cancelAnimationFrame(scanLoopRef.current);
+      if (scanLoopRef.current) clearTimeout(scanLoopRef.current);
       if (streamRef) streamRef.getTracks().forEach(t => t.stop());
     };
   }, [facingMode, getHumanModel, onMatch, records]);
