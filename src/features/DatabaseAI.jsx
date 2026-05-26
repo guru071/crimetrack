@@ -7,7 +7,7 @@ async function callGemini(prompt, apiKey = null) {
   const savedSettings = JSON.parse(localStorage.getItem('crimetrack_settings') || '{}');
   const key = apiKey || savedSettings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || GEMINI_KEY;
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${key}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
