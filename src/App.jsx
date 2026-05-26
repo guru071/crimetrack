@@ -3845,8 +3845,7 @@ export default function App() {
         ...themeToCssVars(timeTheme),
         backgroundColor: timeTheme.bgColor,
         backgroundImage: timeTheme.gradient,
-        backgroundAttachment: "fixed",
-        backgroundSize: "cover",
+        backgroundSize: "100% 100%",
         color: timeTheme.text,
         transition: "background-color 0.8s ease, background-image 0.8s ease",
       }}
@@ -3854,6 +3853,37 @@ export default function App() {
       <Suspense fallback={null}>
         <AICopilot settings={settings} records={records} />
       </Suspense>
+
+      {/* Floating Search Button on Dashboard */}
+      {view === 'dashboard' && isAuthenticated && (
+        <button
+          onClick={() => navigate('list')}
+          title="Search Records"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: 24,
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            background: `linear-gradient(135deg, ${timeTheme.accent}, #4338ca)`,
+            color: "#fff",
+            border: "none",
+            boxShadow: `0 8px 24px ${timeTheme.accent}66`,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 99,
+            transition: "transform 0.2s"
+          }}
+          onPointerDown={e => e.currentTarget.style.transform = "scale(0.95)"}
+          onPointerUp={e => e.currentTarget.style.transform = "scale(1)"}
+        >
+          <Search size={24} />
+        </button>
+      )}
+
       {globalNotification && (
         <div style={{
           position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)",

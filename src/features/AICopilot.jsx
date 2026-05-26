@@ -249,7 +249,7 @@ export default function AICopilot({ settings, records }) {
         ? records.map(r => `[ID:${r.id}, Name:${r.name}, Crime:${r.crimeType || r.crime || 'Unknown'}, Status:${r.status}]`).join(' | ')
         : "No records currently exist.";
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
