@@ -48,7 +48,7 @@ function getWebSpeechRecognition() {
 
 export default function ExcelSpreadsheet({
   records, fields, dataSource, onSave, onRefresh, isSaving, 
-  onExportExcel, onImportExcel, toastShow, goBack, css, T, humanInstance
+  onExportExcel, onImportExcel, toastShow, goBack, css, T
 }) {
   const gridKeys = useMemo(
     () => GRID_COLUMN_KEYS.filter((k) => k === "photo" || fields.some((f) => f.key === k)),
@@ -771,7 +771,6 @@ export default function ExcelSpreadsheet({
           }}
           T={{ text: "var(--ct-text)", accent: ui.color || "var(--ct-accent)", card2: "var(--ct-card)", red: "var(--ct-red)" }}
           css={css}
-          humanInstance={humanInstance}
         />
       )}
 

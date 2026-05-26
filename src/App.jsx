@@ -567,13 +567,6 @@ function Dashboard({
         <input id="import-excel" type="file" accept=".xlsx" style={{ display: "none" }} onChange={onImportExcel} />
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <button style={{ ...css.btnAccent, width: "100%", padding: "16px", fontSize: 16, display: "flex", justifyContent: "center", alignItems: "center", gap: 12 }} onClick={() => navigate("facesearch")}>
-          <Search size={20} />
-          Scan Face to Search
-        </button>
-      </div>
-
       {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
         {[
@@ -3791,7 +3784,6 @@ export default function App() {
           isSaving={gridSaving}
           css={css}
           T={T}
-          humanInstance={humanInstance}
           onExportExcel={handleExportExcel}
           onImportExcel={handleImportExcel}
           toastShow={toast_show}
@@ -3856,36 +3848,6 @@ export default function App() {
       <Suspense fallback={null}>
         <AICopilot settings={settings} records={records} />
       </Suspense>
-
-      {/* Floating Search Button on Dashboard */}
-      {view === 'dashboard' && isAuthenticated && (
-        <button
-          onClick={() => navigate('list')}
-          title="Search Records"
-          style={{
-            position: "fixed",
-            bottom: 24,
-            left: 24,
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            background: `linear-gradient(135deg, ${timeTheme.accent}, #4338ca)`,
-            color: "#fff",
-            border: "none",
-            boxShadow: `0 8px 24px ${timeTheme.accent}66`,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 99,
-            transition: "transform 0.2s"
-          }}
-          onPointerDown={e => e.currentTarget.style.transform = "scale(0.95)"}
-          onPointerUp={e => e.currentTarget.style.transform = "scale(1)"}
-        >
-          <Search size={24} />
-        </button>
-      )}
 
       {globalNotification && (
         <div style={{

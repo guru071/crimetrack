@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Home, Brain, PlusCircle, Shield, User, LayoutGrid, X } from 'lucide-react';
+import { Home, Brain, PlusCircle, Shield, User, LayoutGrid, X, Search } from 'lucide-react';
 
 export default function FloatingNav({ view, navTo, navigate, isDemoMode, onRestrictedAction }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -83,8 +83,9 @@ export default function FloatingNav({ view, navTo, navigate, isDemoMode, onRestr
 
   const tabs = [
     { id: "dashboard", icon: <Home size={18} />, label: "Home" },
-    { id: "intel", icon: <Brain size={18} />, label: "Intel" },
+    { id: "list", icon: <Search size={18} />, label: "Search" },
     { id: "__add__", icon: <PlusCircle size={22} />, label: "Add", isAdd: true },
+    { id: "intel", icon: <Brain size={18} />, label: "Intel" },
     { id: "operations", icon: <Shield size={18} />, label: "Ops" },
     { id: "profile", icon: <User size={18} />, label: "Profile" }
   ];

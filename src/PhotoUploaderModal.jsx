@@ -209,6 +209,28 @@ export default function PhotoUploaderModal({ initialMode, onPhotoCapture, onClos
           </div>
         </div>
       )}
+
+      {/* Fallback UI if programmatic file picker click is blocked by the browser */}
+      {!useCamera && !cropSrc && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: T.card2, padding: 32, borderRadius: 24, textAlign: 'center', width: '100%', maxWidth: 320, boxShadow: '0 24px 48px rgba(0,0,0,0.5)', border: `1px solid ${T.border || 'rgba(255,255,255,0.1)'}` }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 12 }}>Upload Photo</div>
+            <div style={{ fontSize: 14, color: T.text, opacity: 0.7, marginBottom: 24 }}>Select an image file from your device to continue.</div>
+            <label 
+              style={{ ...css.btnAccent, width: '100%', padding: '14px 20px', borderRadius: 12, marginBottom: 12, fontSize: 16, fontWeight: 600, display: 'block', cursor: 'pointer', boxSizing: 'border-box' }} 
+            >
+              Choose File
+              <input type="file" accept="image/*" style={{ width: 0, height: 0, opacity: 0, position: 'absolute' }} onChange={handlePhotoUpload} />
+            </label>
+            <button 
+              style={{ ...css.btn, width: '100%', padding: '14px 20px', borderRadius: 12, color: T.text, background: "transparent", border: `1px solid ${T.border || 'rgba(255,255,255,0.2)'}` }} 
+              onClick={cancel}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
