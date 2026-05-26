@@ -3708,10 +3708,13 @@ export default function App() {
     };
   };
 
+  useEffect(() => { document.body.style.backgroundColor = !isAuthenticated ? '#050505' : timeTheme.bgColor; }, [isAuthenticated, timeTheme.bgColor]);
+
   const shellBg = {
     className: "ct-app",
     style: {
       ...themeToCssVars(timeTheme),
+      "--ct-bg": !isAuthenticated ? "#050505" : timeTheme.bgColor,
       minHeight: "100dvh",
       backgroundColor: !isAuthenticated ? "#050505" : timeTheme.bgColor,
       backgroundImage: !isAuthenticated ? "none" : timeTheme.gradient,
