@@ -13,16 +13,22 @@ export default function PhotoUploaderModal({ initialMode, onPhotoCapture, onClos
   const imgRef = useRef(null);
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
+  const fileInputTriggered = useRef(false);
 
   useEffect(() => {
+    let timeoutId;
     if (initialMode === 'camera') {
       startCamera();
-    } else if (initialMode === 'upload') {
+    } else if (initialMode === 'upload' && !fileInputTriggered.current) {
+      fileInputTriggered.current = true;
       // Small delay to ensure render
-      setTimeout(() => fileInputRef.current?.click(), 100);
+      timeoutId = setTimeout(() => fileInputRef.current?.click(), 100);
     }
     // Opening behavior is intentionally keyed only to the requested initial mode.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [initialMode]);
 
   const startCamera = async (mode = facingMode) => {
