@@ -3789,6 +3789,8 @@ export default function App() {
           onRefresh={() => handleLoadSource(activeDataSource)}
           isSaving={gridSaving}
           css={css}
+          T={T}
+          humanInstance={humanInstance}
           onExportExcel={handleExportExcel}
           onImportExcel={handleImportExcel}
           toastShow={toast_show}
