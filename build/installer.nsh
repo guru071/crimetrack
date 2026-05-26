@@ -3,6 +3,9 @@
 ; whether to keep or delete local app data.
 
 !macro customUnInstall
+  ; If uninstalling silently (e.g., during an in-place update), keep data automatically
+  IfSilent keep_data
+
   ; Ask the user before deleting local storage data
   MessageBox MB_YESNO|MB_ICONQUESTION \
     "Do you want to delete all local app data?$\n$\n\

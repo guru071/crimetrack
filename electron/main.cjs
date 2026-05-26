@@ -15,7 +15,7 @@ app.userAgentFallback = app.userAgentFallback
 // ─── LOCAL HTTP SERVER ─────────────────────────────────────────────────────────
 // Firebase auth/unauthorized-domain fix:
 // Firebase blocks logins from file:// origins. By serving the app on
-// http://127.0.0.1:<port>, Firebase accepts it as "localhost" which IS allowed.
+// http://localhost:<port>, Firebase accepts it as "localhost" which IS allowed.
 // Add "localhost" to Firebase Console → Authentication → Settings → Authorized Domains.
 let localPort = 0;
 
@@ -63,10 +63,14 @@ function serveDistFolder() {
   });
 
   return new Promise((resolve) => {
-    // Port 0 = OS picks a random free port
-    server.listen(0, '127.0.0.1', () => {
+    server.on('error', (e) => {
+      if (e.code === 'EADDRINUSE') {
+        server.listen(0, 'localhost'); // fallback to random port if 5174 is busy
+      }
+    });
+    server.listen(5174, 'localhost', () => {
       localPort = server.address().port;
-      console.log(`C.A.S.E local server running on http://127.0.0.1:${localPort}`);
+      console.log(`C.A.S.E local server running on http://localhost:${localPort}`);
       resolve(localPort);
     });
   });
@@ -110,8 +114,8 @@ function createWindow(port) {
     }
 
     // Block localhost navigation (unless it's our own server)
-    if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) {
-      if (!url.includes(`127.0.0.1:${port}`)) return { action: 'deny' };
+    if (url.startsWith('http://localhost') || url.startsWith('http://localhost')) {
+      if (!url.includes(`localhost:${port}`)) return { action: 'deny' };
     }
 
     // Open other external URLs in the system default browser
@@ -128,7 +132,7 @@ function createWindow(port) {
   });
 
   // Load via localhost instead of file:// — this is the Firebase auth fix!
-  win.loadURL(`http://127.0.0.1:${port}`);
+  win.loadURL(`http://localhost:${port}`);
 
   // Permissions (camera, mic for face scanner)
   win.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
