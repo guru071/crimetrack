@@ -21,7 +21,7 @@
       ]
     },
     "Keyboard": {
-      "resize": "none",
+      "resize": "native",
       "resizeOnFullScreen": true,
       "style": "DARK"
     }
